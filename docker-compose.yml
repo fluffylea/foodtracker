@@ -1,0 +1,18 @@
+services:
+  plate:
+    build: .
+    image: plate:latest
+    container_name: plate
+    restart: unless-stopped
+    ports:
+      - '3000:3000'
+    environment:
+      DATABASE_PATH: /data/plate.db
+      ORIGIN: ${ORIGIN:-http://localhost:3000}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@example.com}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-change-me}
+    volumes:
+      - plate-data:/data
+
+volumes:
+  plate-data:

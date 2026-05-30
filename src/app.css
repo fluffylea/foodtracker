@@ -1,0 +1,69 @@
+/* Plate — global theme. Palette ported from the wireframes. */
+:root {
+  --ink: #2c2a27;
+  --muted: #8b857c;
+  --faint: #b3ada3;
+  --line: #e7e2da;
+  --line2: #f0ece4;
+  --card: #ffffff;
+  --panel: #faf8f4;
+  --fill: #f1ede5;
+  --bg: #efece6;
+  --accent: #ef8a3c;
+  --accent-ink: #c96a1f;
+  --accent-soft: #fbe7d4;
+  --good: #6f9e63;
+  --good-soft: #e6efe0;
+  --over: #d98b71;
+
+  --radius: 11px;
+  --rail-w: 184px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  font-size: 14px;
+  line-height: 1.4;
+  letter-spacing: -0.005em;
+}
+
+h1,
+h2,
+h3 {
+  letter-spacing: -0.02em;
+}
+
+a {
+  color: var(--accent-ink);
+  text-decoration: none;
+}
+
+button {
+  font: inherit;
+}
+
+/* Generic helpers reused across views. */
+.muted {
+  color: var(--muted);
+}
+.faint {
+  color: var(--faint);
+}
+.card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
