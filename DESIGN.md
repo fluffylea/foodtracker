@@ -212,3 +212,13 @@ Recipe nutrition = sum of components, recomputed live, with optional per-serving
 **Still open ❓**
 - **Graphs direction** — A (chips + overlay) vs B (left control panel). Leaning A; not final.
 - **Trends normalization toggle** — % of goal / z-score / raw — keep all three or simplify?
+
+## 11. Security backlog (deferred, hand-rolled auth kept)
+
+Auth uses standard primitives (scrypt, hashed 256-bit session tokens, httpOnly/Lax
+cookies, SvelteKit CSRF) but is hand-rolled, not a library. Decided to keep it for the
+trusted-user model. Deferred hardening to revisit later:
+- **Login rate-limiting / brute-force throttling** (main gap).
+- **Self-service password change + reset.**
+- Tunable scrypt cost; optional "log out everywhere" / 2FA.
+- If OAuth/email flows are ever wanted, reconsider **Better Auth**.
