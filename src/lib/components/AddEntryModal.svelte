@@ -147,13 +147,15 @@
               {#if energyPreview !== null}<b>{energyPreview} kcal</b>{/if}
             </div>
 
-            <div class="mfoot">
+            <!-- Primary action is first in the DOM so Enter submits Save/Add,
+                 not the destructive Remove; row-reverse puts Remove on the left. -->
+            <div class="mfoot" class:rev={editing}>
               {#if editing}
-                <button type="submit" formaction="?/deleteEntry" formnovalidate class="ghost danger">Remove</button>
                 <button type="submit" formaction="?/updateEntry" class="cta">Save</button>
+                <button type="submit" formaction="?/deleteEntry" formnovalidate class="ghost danger">Remove</button>
               {:else}
-                <span></span>
                 <button type="submit" formaction="?/addEntry" class="cta">Add</button>
+                <span></span>
               {/if}
             </div>
           </form>
@@ -343,6 +345,9 @@
     align-items: center;
     justify-content: space-between;
     margin-top: 16px;
+  }
+  .mfoot.rev {
+    flex-direction: row-reverse;
   }
   .ghost {
     border: 1px solid var(--line);

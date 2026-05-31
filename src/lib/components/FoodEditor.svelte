@@ -137,7 +137,13 @@
     <button type="button" class="uadd" onclick={addUnit}>+ Add unit</button>
   </div>
 
+  <!-- Save group first in the DOM so Enter submits Save (the form's ?/save
+       action), not the destructive Delete; row-reverse keeps Delete on the left. -->
   <div class="efoot">
+    <div class="efoot-r">
+      {#if justSaved}<span class="saved">Saved ✓</span>{/if}
+      <button type="submit" class="cta">{food ? 'Save food' : 'Create food'}</button>
+    </div>
     {#if food}
       <button
         type="submit"
@@ -157,10 +163,6 @@
     {:else}
       <span></span>
     {/if}
-    <div class="efoot-r">
-      {#if justSaved}<span class="saved">Saved ✓</span>{/if}
-      <button type="submit" class="cta">{food ? 'Save food' : 'Create food'}</button>
-    </div>
   </div>
 </form>
 
@@ -365,6 +367,7 @@
     align-items: center;
     justify-content: space-between;
     margin-top: 16px;
+    flex-direction: row-reverse;
   }
   .ghost {
     border: 1px solid var(--line);
