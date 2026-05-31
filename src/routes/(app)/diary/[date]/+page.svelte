@@ -76,43 +76,60 @@
   });
 
   // --- pointer-based reorder (works on touch AND mouse) ---
-  // Started from a grip handle (touch-action: none) so it never fights page
-  // scroll. elementFromPoint finds the item under the pointer; the live order
-  // updates as you drag and persists on release. (Native HTML5 drag-and-drop
-  // doesn't fire on touch devices, which is why the old version was broken.)
+  // Started from a grip handle (touch-action: none + pointer capture) so it
+  // never fights scroll, text selection, or stray clicks. Instead of moving the
+  // item live, a drop-indicator line shows where it will land; the reorder is
+  // committed only on release. (Native HTML5 drag-and-drop doesn't fire on
+  // touch devices, which is why the old version was broken.)
   let dragKind = $state<'goal' | 'meal' | null>(null);
   let dragId = $state<number | null>(null);
-  let dragMoved = false;
+  // The id the dragged item will be inserted *before*, or 'end'.
+  let dropTarget = $state<number | 'end' | null>(null);
 
-  function moveTo(arr: number[], id: number, targetId: number): number[] {
-    const from = arr.indexOf(id);
-    const to = arr.indexOf(targetId);
-    if (from < 0 || to < 0 || from === to) return arr;
-    const next = [...arr];
-    next.splice(from, 1);
-    next.splice(to, 0, id);
-    return next;
-  }
   function onReorderMove(e: PointerEvent) {
     if (dragKind === null || dragId === null) return;
-    const el = document.elementFromPoint(e.clientX, e.clientY)?.closest(`[data-${dragKind}-id]`);
+    const el = document
+      .elementFromPoint(e.clientX, e.clientY)
+      ?.closest(`[data-${dragKind}-id]`) as HTMLElement | null;
     if (!el) return;
     const targetId = Number(el.getAttribute(`data-${dragKind}-id`));
     if (!Number.isInteger(targetId) || targetId === dragId) return;
-    dragMoved = true;
-    if (dragKind === 'goal') order = moveTo(order, dragId, targetId);
-    else mealOrder = moveTo(mealOrder, dragId, targetId);
+
+    const arr = dragKind === 'goal' ? order : mealOrder;
+    const rect = el.getBoundingClientRect();
+    // meals stack vertically; tiles flow in a grid → use the relevant axis.
+    const before =
+      dragKind === 'meal'
+        ? e.clientY < rect.top + rect.height / 2
+        : e.clientX < rect.left + rect.width / 2;
+    if (before) {
+      dropTarget = targetId;
+    } else {
+      const i = arr.indexOf(targetId);
+      dropTarget = i >= 0 && i + 1 < arr.length ? arr[i + 1] : 'end';
+    }
   }
   async function onReorderUp() {
     window.removeEventListener('pointermove', onReorderMove);
+    document.body.classList.remove('reordering');
     const kind = dragKind;
-    const moved = dragMoved;
+    const id = dragId;
+    const target = dropTarget;
     dragKind = null;
     dragId = null;
-    dragMoved = false;
-    if (!moved || kind === null) return;
+    dropTarget = null;
+    if (kind === null || id === null || target === null) return;
+
+    const orig = kind === 'goal' ? order : mealOrder;
+    const next = orig.filter((x) => x !== id);
+    const at = target === 'end' ? next.length : next.indexOf(target);
+    next.splice(at < 0 ? next.length : at, 0, id);
+    if (next.join(',') === orig.join(',')) return; // no change
+
+    if (kind === 'goal') order = next;
+    else mealOrder = next;
     const body = new FormData();
-    body.set('order', JSON.stringify(kind === 'goal' ? order : mealOrder));
+    body.set('order', JSON.stringify(next));
     await fetch(kind === 'goal' ? '?/reorderGoals' : '?/reorderMeals', {
       method: 'POST',
       body,
@@ -123,9 +140,12 @@
   function startReorder(kind: 'goal' | 'meal', id: number, e: PointerEvent) {
     if (!isToday) return;
     e.preventDefault();
+    e.stopPropagation();
+    (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
     dragKind = kind;
     dragId = id;
-    dragMoved = false;
+    dropTarget = null;
+    document.body.classList.add('reordering');
     window.addEventListener('pointermove', onReorderMove);
     window.addEventListener('pointerup', onReorderUp, { once: true });
   }
@@ -161,11 +181,13 @@
         {@const g = goalByNutrient.get(nid)}
         {@const n = catalogById.get(nid)}
         {#if g && n}
-          <div class="tile-wrap" class:dragging={dragKind === 'goal' && dragId === nid} data-goal-id={nid}>
-            {#if isToday}
-              <!-- svelte-ignore a11y_no_static_element_interactions -->
-              <span class="tgrip" onpointerdown={(e) => startReorder('goal', nid, e)} title="Drag to reorder">⠿</span>
-            {/if}
+          <div
+            class="tile-wrap"
+            class:dragging={dragKind === 'goal' && dragId === nid}
+            class:drop-before={dropTarget === nid}
+            class:drop-end={dropTarget === 'end' && nid === order[order.length - 1]}
+            data-goal-id={nid}
+          >
             <GoalTile
               name={n.name}
               unit={n.unit}
@@ -174,6 +196,7 @@
               targetMin={g.targetMin}
               targetMax={g.targetMax}
               onedit={() => isToday && openEditGoal(g)}
+              ongrip={isToday ? (e) => startReorder('goal', nid, e) : undefined}
             />
           </div>
         {/if}
@@ -203,7 +226,13 @@
     {@const meal = mealById.get(mid)}
     {#if meal}
       {@const es = entriesFor(mid)}
-      <section class="meal-sec" class:dragging={dragKind === 'meal' && dragId === mid} data-meal-id={mid}>
+      <section
+        class="meal-sec"
+        class:dragging={dragKind === 'meal' && dragId === mid}
+        class:drop-before={dropTarget === mid}
+        class:drop-end={dropTarget === 'end' && mid === mealOrder[mealOrder.length - 1]}
+        data-meal-id={mid}
+      >
         <div class="sec-h meal-head">
           {#if isToday}
             <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -411,24 +440,24 @@
     position: relative;
   }
   .tile-wrap.dragging {
-    opacity: 0.5;
+    opacity: 0.4;
   }
-  .tgrip {
+  /* drop-indicator line (grid → vertical line at the tile edge) */
+  .tile-wrap.drop-before::before,
+  .tile-wrap.drop-end::after {
+    content: '';
     position: absolute;
-    top: 6px;
-    left: 7px;
-    z-index: 2;
-    color: var(--faint);
-    font-size: 11px;
-    line-height: 1;
-    padding: 3px;
-    cursor: grab;
-    touch-action: none;
-    opacity: 0.45;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    border-radius: 2px;
+    background: var(--accent);
   }
-  .tgrip:active {
-    cursor: grabbing;
-    opacity: 1;
+  .tile-wrap.drop-before::before {
+    left: -5px;
+  }
+  .tile-wrap.drop-end::after {
+    right: -5px;
   }
   .link-btn {
     border: none;
@@ -518,9 +547,27 @@
   /* Meal sections — light, like the original Log header (no card border). */
   .meal-sec {
     margin-bottom: 18px;
+    position: relative;
   }
   .meal-sec:first-of-type {
     margin-top: 22px;
+  }
+  /* drop-indicator line (vertical list → horizontal line at the meal edge) */
+  .meal-sec.drop-before::before,
+  .meal-sec.drop-end::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: 2px;
+    border-radius: 2px;
+    background: var(--accent);
+  }
+  .meal-sec.drop-before::before {
+    top: -9px;
+  }
+  .meal-sec.drop-end::after {
+    bottom: -9px;
   }
   .meal-head {
     align-items: center;

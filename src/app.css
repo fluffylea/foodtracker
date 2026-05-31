@@ -76,6 +76,13 @@ button {
   }
 }
 
+/* While a drag-reorder is in progress, suppress text selection everywhere. */
+body.reordering,
+body.reordering * {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
 /* Generic helpers reused across views. */
 .muted {
   color: var(--muted);
