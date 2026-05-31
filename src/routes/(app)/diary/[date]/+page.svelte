@@ -4,9 +4,25 @@
   import AddEntryModal from '$lib/components/AddEntryModal.svelte';
   import GoalTile from '$lib/components/GoalTile.svelte';
   import GoalModal from '$lib/components/GoalModal.svelte';
-  import { invalidateAll } from '$app/navigation';
+  import { invalidateAll, goto } from '$app/navigation';
 
   let { data } = $props();
+
+  // Swipe left/right to change day (mobile); the top arrows still work too.
+  let touchStartX = 0;
+  let touchStartY = 0;
+  function onTouchStart(e: TouchEvent) {
+    touchStartX = e.touches[0].clientX;
+    touchStartY = e.touches[0].clientY;
+  }
+  function onTouchEnd(e: TouchEvent) {
+    if (modal || goalModal) return;
+    const dx = e.changedTouches[0].clientX - touchStartX;
+    const dy = e.changedTouches[0].clientY - touchStartY;
+    if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5) {
+      goto(`/diary/${dx < 0 ? data.next : data.prev}`);
+    }
+  }
 
   const catalogById = $derived(new Map(data.catalog.map((n) => [n.id, n])));
   const goalByNutrient = $derived(new Map(data.goals.map((g) => [g.nutrientId, g])));
@@ -142,7 +158,8 @@
   </div>
 </header>
 
-<div class="body">
+<!-- svelte-ignore a11y_no_static_element_interactions -->
+<div class="body" ontouchstart={onTouchStart} ontouchend={onTouchEnd}>
   <div class="sec-h">
     <span>Goals</span>
     {#if isToday}
@@ -286,6 +303,9 @@
   {/if}
 </div>
 
+<!-- Floating quick-add (mobile only, thumb-reachable). -->
+<button class="fab" type="button" onclick={() => openAdd(null)} aria-label="Add food">+</button>
+
 {#if modal}
   {#key modalKey}
     <AddEntryModal
@@ -377,6 +397,33 @@
   @media (max-width: 560px) {
     .tiles {
       grid-template-columns: repeat(2, 1fr);
+    }
+  }
+
+  .fab {
+    display: none;
+  }
+  @media (max-width: 768px) {
+    .fab {
+      display: grid;
+      place-items: center;
+      position: fixed;
+      right: 16px;
+      bottom: calc(58px + env(safe-area-inset-bottom) + 16px);
+      width: 52px;
+      height: 52px;
+      border-radius: 50%;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      font-size: 30px;
+      line-height: 1;
+      box-shadow: 0 8px 20px rgba(239, 138, 60, 0.45);
+      z-index: 30;
+      cursor: pointer;
+    }
+    .fab:active {
+      background: var(--accent-ink);
     }
   }
   .tile-wrap {
