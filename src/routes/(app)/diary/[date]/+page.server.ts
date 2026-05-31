@@ -2,6 +2,7 @@ import { error, fail, redirect } from '@sveltejs/kit';
 import { addDays, formatDayLabel, isValidDate, relativeLabel, todayInTz } from '$lib/date';
 import { getDay, addEntry, updateEntry, deleteEntry } from '$lib/server/diary';
 import { nutrientCatalog, listFoodsForPicker } from '$lib/server/foods';
+import { getVisibleGoals, saveGoalCard, deleteGoalCard, reorderGoals } from '$lib/server/goals';
 import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = ({ params, locals }) => {
@@ -24,9 +25,18 @@ export const load: PageServerLoad = ({ params, locals }) => {
     entries: day.entries,
     totals: day.totals,
     catalog: nutrientCatalog(),
-    foods: listFoodsForPicker(user.id)
+    foods: listFoodsForPicker(user.id),
+    goals: getVisibleGoals(user.id, date)
   };
 };
+
+function parseOptionalNumber(raw: FormDataEntryValue | null): number | null {
+  if (raw === null) return null;
+  const s = String(raw).trim();
+  if (s === '') return null;
+  const n = Number(s);
+  return Number.isNaN(n) ? null : n;
+}
 
 function parseUnitId(raw: FormDataEntryValue | null): number | null {
   // Empty / 'g' means grams (no unit row).
@@ -68,5 +78,52 @@ export const actions: Actions = {
     if (!Number.isInteger(id)) return fail(400, { error: 'Invalid entry.' });
     deleteEntry(locals.user!.id, id);
     return { deleted: true };
+  },
+
+  // --- Goals (always effective today; past days keep their goals) ---
+
+  saveGoal: async ({ request, locals }) => {
+    const user = locals.user!;
+    const today = todayInTz(user.timezone);
+    const f = await request.formData();
+    const nutrientId = Number(f.get('nutrientId'));
+    if (!Number.isInteger(nutrientId)) return fail(400, { error: 'Pick a nutrient.' });
+
+    const originalRaw = f.get('originalNutrientId');
+    const originalNutrientId = originalRaw !== null ? Number(originalRaw) : null;
+    const min = parseOptionalNumber(f.get('min'));
+    const max = parseOptionalNumber(f.get('max'));
+    if (min !== null && max !== null && min >= max) {
+      return fail(400, { error: 'Minimum must be less than maximum.' });
+    }
+
+    saveGoalCard(user.id, today, {
+      originalNutrientId: originalNutrientId !== null && Number.isInteger(originalNutrientId) ? originalNutrientId : null,
+      nutrientId,
+      min,
+      max
+    });
+    return { goalSaved: true };
+  },
+
+  deleteGoal: async ({ request, locals }) => {
+    const user = locals.user!;
+    const today = todayInTz(user.timezone);
+    const nutrientId = Number((await request.formData()).get('nutrientId'));
+    if (!Number.isInteger(nutrientId)) return fail(400, { error: 'Invalid goal.' });
+    deleteGoalCard(user.id, today, nutrientId);
+    return { goalDeleted: true };
+  },
+
+  reorderGoals: async ({ request, locals }) => {
+    const raw = (await request.formData()).get('order');
+    let order: number[] = [];
+    try {
+      order = JSON.parse(String(raw)).map((n: unknown) => Number(n)).filter(Number.isInteger);
+    } catch {
+      return fail(400, { error: 'Bad order.' });
+    }
+    reorderGoals(locals.user!.id, order);
+    return { reordered: true };
   }
 };

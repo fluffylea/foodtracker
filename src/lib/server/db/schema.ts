@@ -177,11 +177,16 @@ export const goals = sqliteTable(
     nutrientId: integer('nutrient_id')
       .notNull()
       .references(() => nutrients.id, { onDelete: 'cascade' }),
-    mode: text('mode', { enum: ['maximum', 'minimum', 'range', 'display'] }).notNull(),
+    // 'none' is a tombstone: an effective-dated row that stops a previously
+    // set goal from a date forward (no tile), without touching earlier days.
+    mode: text('mode', { enum: ['maximum', 'minimum', 'range', 'display', 'none'] }).notNull(),
     // Semantics depend on mode: maximum→targetMax, minimum→targetMin,
-    // range→both, display→neither.
+    // range→both, display/none→neither.
     targetMin: real('target_min'),
     targetMax: real('target_max'),
+    // Display order of the goal tile (per user, per nutrient; carried across
+    // versions so reordering is independent of the effective-dated value).
+    sortOrder: integer('sort_order').notNull().default(0),
     effectiveFrom: text('effective_from').notNull(), // 'YYYY-MM-DD'
     createdAt: integer('created_at').notNull().default(now)
   },

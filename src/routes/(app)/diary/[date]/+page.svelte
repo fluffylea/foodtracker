@@ -1,13 +1,24 @@
 <script lang="ts">
+  import { untrack } from 'svelte';
   import AddEntryModal from '$lib/components/AddEntryModal.svelte';
+  import GoalTile from '$lib/components/GoalTile.svelte';
+  import GoalModal from '$lib/components/GoalModal.svelte';
+  import { invalidateAll } from '$app/navigation';
 
   let { data } = $props();
 
+  const catalogById = $derived(new Map(data.catalog.map((n) => [n.id, n])));
+  const goalByNutrient = $derived(new Map(data.goals.map((g) => [g.nutrientId, g])));
+  const usedNutrientIds = $derived(data.goals.map((g) => g.nutrientId));
+
+  // Goals are managed "now": only the current day's tiles are interactive.
+  const isToday = $derived(data.date === data.today);
+  const canAddGoal = $derived(isToday && data.goals.length < data.catalog.length);
+
+  // --- entry add/edit modal ---
   type Editing = { id: number; foodId: number; amount: number; unitId: number | null };
   let modal = $state<{ editing: Editing | null } | null>(null);
-
   const modalKey = $derived(modal?.editing ? `e${modal.editing.id}` : 'new');
-
   function openAdd() {
     modal = { editing: null };
   }
@@ -15,9 +26,49 @@
     modal = { editing: { id: e.id, foodId: e.foodId, amount: e.amount, unitId: e.unitId } };
   }
 
-  function fmtTotal(v: number, unit: string): string {
-    if (unit === 'kcal') return Math.round(v).toLocaleString();
-    return String(Math.round(v * 10) / 10);
+  // --- goal add/edit modal ---
+  type GoalEditing = { nutrientId: number; min: number | null; max: number | null };
+  let goalModal = $state<{ editing: GoalEditing | null } | null>(null);
+  const goalModalKey = $derived(goalModal?.editing ? `g${goalModal.editing.nutrientId}` : 'gnew');
+  function openAddGoal() {
+    goalModal = { editing: null };
+  }
+  function openEditGoal(g: (typeof data.goals)[number]) {
+    goalModal = { editing: { nutrientId: g.nutrientId, min: g.targetMin, max: g.targetMax } };
+  }
+
+  // --- drag-to-reorder (today only) ---
+  // Initialised for SSR/first render; the effect resyncs after the goal set
+  // changes (reorder/add/delete, or navigating to another day).
+  let order = $state<number[]>(untrack(() => data.goals.map((g) => g.nutrientId)));
+  $effect(() => {
+    order = data.goals.map((g) => g.nutrientId);
+  });
+  let dragFrom = $state<number | null>(null);
+  let dragChanged = false;
+
+  function onDragStart(i: number) {
+    dragFrom = i;
+    dragChanged = false;
+  }
+  function onDragOver(i: number, e: DragEvent) {
+    e.preventDefault();
+    if (dragFrom === null || dragFrom === i) return;
+    const next = [...order];
+    const [moved] = next.splice(dragFrom, 1);
+    next.splice(i, 0, moved);
+    order = next;
+    dragFrom = i;
+    dragChanged = true;
+  }
+  async function onDragEnd() {
+    dragFrom = null;
+    if (!dragChanged) return;
+    dragChanged = false;
+    const body = new FormData();
+    body.set('order', JSON.stringify(order));
+    await fetch('?/reorderGoals', { method: 'POST', body, headers: { 'x-sveltekit-action': 'true' } });
+    await invalidateAll();
   }
 
   const totalEnergy = $derived.by(() => {
@@ -40,15 +91,45 @@
 </header>
 
 <div class="body">
-  <div class="sec-h"><span>Goals</span><span class="mut">goal tiles arrive in milestone 5</span></div>
-  <div class="tiles">
-    {#each data.catalog as n (n.id)}
-      <div class="tile">
-        <div class="nm">{n.name}</div>
-        <div class="val">{fmtTotal(data.totals[n.id] ?? 0, n.unit)}<small> {n.unit}</small></div>
-      </div>
-    {/each}
+  <div class="sec-h">
+    <span>Goals</span>
+    {#if !isToday}<span class="mut">viewing {data.date} · edit goals on today</span>{/if}
   </div>
+  {#if data.goals.length === 0 && !canAddGoal}
+    <p class="empty">No goals for this day.</p>
+  {:else}
+    <div class="tiles">
+      {#each order as nid (nid)}
+        {@const g = goalByNutrient.get(nid)}
+        {@const n = catalogById.get(nid)}
+        {#if g && n}
+          <div
+            class="tile-wrap"
+            class:dragging={dragFrom !== null}
+            draggable={isToday}
+            role={isToday ? 'button' : undefined}
+            tabindex="-1"
+            ondragstart={() => onDragStart(order.indexOf(nid))}
+            ondragover={(e) => isToday && onDragOver(order.indexOf(nid), e)}
+            ondragend={onDragEnd}
+          >
+            <GoalTile
+              name={n.name}
+              unit={n.unit}
+              consumed={data.totals[nid] ?? 0}
+              mode={g.mode}
+              targetMin={g.targetMin}
+              targetMax={g.targetMax}
+              onedit={() => isToday && openEditGoal(g)}
+            />
+          </div>
+        {/if}
+      {/each}
+      {#if canAddGoal}
+        <button class="add-tile" type="button" onclick={openAddGoal}>+ Add goal</button>
+      {/if}
+    </div>
+  {/if}
 
   <div class="sec-h mt">
     <span>Log</span>
@@ -75,6 +156,17 @@
 {#if modal}
   {#key modalKey}
     <AddEntryModal foods={data.foods} editing={modal.editing} onclose={() => (modal = null)} />
+  {/key}
+{/if}
+
+{#if goalModal}
+  {#key goalModalKey}
+    <GoalModal
+      catalog={data.catalog}
+      {usedNutrientIds}
+      editing={goalModal.editing}
+      onclose={() => (goalModal = null)}
+    />
   {/key}
 {/if}
 
@@ -143,30 +235,30 @@
     display: grid;
     grid-template-columns: repeat(4, 1fr);
     gap: 9px;
+    align-items: stretch;
   }
-  .tile {
-    background: #fff;
-    border: 1px solid var(--line);
+  .tile-wrap {
+    display: flex;
+  }
+  .tile-wrap[draggable='true'] {
+    cursor: grab;
+  }
+  .tile-wrap.dragging[draggable='true'] {
+    cursor: grabbing;
+  }
+  .add-tile {
+    border: 1px dashed var(--line);
     border-radius: 11px;
-    padding: 10px 11px;
-  }
-  .tile .nm {
-    font-size: 10px;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    color: var(--muted);
+    background: transparent;
+    color: var(--accent-ink);
     font-weight: 600;
+    font-size: 13px;
+    cursor: pointer;
+    min-height: 72px;
   }
-  .tile .val {
-    font-size: 18px;
-    font-weight: 600;
-    margin-top: 7px;
-    font-variant-numeric: tabular-nums;
-  }
-  .tile .val small {
-    font-size: 10.5px;
-    color: var(--faint);
-    font-weight: 400;
+  .add-tile:hover {
+    background: var(--accent-soft);
+    border-color: var(--accent);
   }
   .log {
     background: #fff;

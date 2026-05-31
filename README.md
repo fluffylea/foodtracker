@@ -3,11 +3,12 @@
 A self-hosted calorie & nutrition tracker for 1–12 trusted users.
 See [DESIGN.md](DESIGN.md) for the full design and roadmap.
 
-> **Status:** milestone 4 — diary core. Done so far: scaffold + schema (m1),
+> **Status:** milestone 5 — goals. Done so far: scaffold + schema (m1),
 > session-cookie auth + admin user management (m2), the local-food layer with a
-> named-units editor (m3), and diary logging — add/edit/remove entries with
-> amount + unit, unit→grams math, and per-day nutrient totals on the Today view (m4).
-> Goals, Open Food Facts integration, meal groups and graphs follow next.
+> named-units editor (m3), diary logging with unit→grams math and per-day totals (m4),
+> and effective-dated goals — per-card modal (mode derived from which of min/max are
+> set), drag-to-reorder tiles, and progress bars that scale to the target and mark
+> overflow (m5). Open Food Facts integration, meal groups and graphs follow next.
 
 ## Stack
 
