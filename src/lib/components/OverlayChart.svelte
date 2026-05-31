@@ -1,20 +1,38 @@
 <script lang="ts">
-  import { shortDayLabel, formatDayLabel } from '$lib/date';
+  import { shortDayLabel, formatDayLabel, type AxisTick } from '$lib/date';
 
   type Line = { id: number; name: string; unit: string; color: string; values: number[] };
   let {
     dates,
     lines,
+    ticks = [],
     granularity = 'day',
-    height = 280
+    height = 280,
+    onpick
   }: {
     dates: string[];
     lines: Line[];
+    ticks?: AxisTick[];
     granularity?: 'day' | 'week';
     height?: number;
+    onpick?: (index: number) => void;
   } = $props();
 
   const n = $derived(dates.length);
+
+  function indexFromX(clientX: number): number | null {
+    if (!plotEl || n === 0) return null;
+    const rect = plotEl.getBoundingClientRect();
+    const frac = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
+    return Math.round(frac * (n - 1));
+  }
+
+  // Keep edge tick labels from spilling past the plot.
+  function tickAlign(x: number): string {
+    if (x <= 2) return '0';
+    if (x >= 98) return '-100%';
+    return '-50%';
+  }
 
   // Each metric is normalized to its own max over the window, so lines with
   // very different scales (kcal vs g) overlay and their shapes are comparable.
@@ -47,30 +65,19 @@
     return { solid, dashed, dot: pts.length === 1 ? { x: pts[0].x, y: pts[0].y } : null };
   }
 
-  // ~7 evenly spaced x-axis date labels.
-  const xLabels = $derived.by(() => {
-    if (n === 0) return [];
-    const count = Math.min(7, n);
-    const out: { x: number; label: string }[] = [];
-    for (let k = 0; k < count; k++) {
-      const i = Math.round((k / Math.max(1, count - 1)) * (n - 1));
-      out.push({ x: xAt(i), label: shortDayLabel(dates[i]) });
-    }
-    return out;
-  });
-
   // ---- hover cursor ----
   let plotEl: HTMLDivElement | undefined = $state();
   let hover = $state<number | null>(null);
 
   function onMove(e: PointerEvent) {
-    if (!plotEl || n === 0) return;
-    const rect = plotEl.getBoundingClientRect();
-    const frac = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
-    hover = Math.round(frac * (n - 1));
+    hover = indexFromX(e.clientX);
   }
   function onLeave() {
     hover = null;
+  }
+  function onClick(e: MouseEvent) {
+    const i = indexFromX(e.clientX);
+    if (i !== null) onpick?.(i);
   }
 
   function fmt(v: number, unit: string): string {
@@ -84,11 +91,21 @@
 
 <div class="ochart" style="height: {height}px">
   <div class="yax"><span>100%</span><span>75</span><span>50</span><span>25</span><span>0</span></div>
-  <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div class="plot" bind:this={plotEl} onpointermove={onMove} onpointerleave={onLeave}>
+  <!-- svelte-ignore a11y_no_static_element_interactions, a11y_click_events_have_key_events -->
+  <div
+    class="plot"
+    class:clickable={onpick && lines.length > 0}
+    bind:this={plotEl}
+    onpointermove={onMove}
+    onpointerleave={onLeave}
+    onclick={onClick}
+  >
     <svg viewBox="0 0 100 100" preserveAspectRatio="none">
       {#each [0, 25, 50, 75, 100] as y}
         <line class="gl" x1="0" x2="100" y1={y} y2={y} />
+      {/each}
+      {#each ticks as t (t.index)}
+        <line class="vgl" x1={xAt(t.index)} x2={xAt(t.index)} y1="0" y2="100" />
       {/each}
       {#each lines as l (l.id)}
         {@const s = shape(l)}
@@ -121,8 +138,11 @@
     {/if}
   </div>
   <div class="xax">
-    {#each xLabels as t, i (i)}
-      <span style="left: {t.x}%; transform: translateX({i === 0 ? '0' : i === xLabels.length - 1 ? '-100%' : '-50%'})">{t.label}</span>
+    {#each ticks as t (t.index)}
+      <span class="tick" style="left: {xAt(t.index)}%; transform: translateX({tickAlign(xAt(t.index))})">
+        <span class="tlabel">{t.label}</span>
+        {#if t.sub}<span class="tsub">{t.sub}</span>{/if}
+      </span>
     {/each}
   </div>
 </div>
@@ -138,7 +158,7 @@
     position: absolute;
     left: 0;
     top: 8px;
-    bottom: 24px;
+    bottom: 32px;
     width: 34px;
     display: flex;
     flex-direction: column;
@@ -156,7 +176,10 @@
     left: 40px;
     right: 14px;
     top: 12px;
-    bottom: 24px;
+    bottom: 32px;
+  }
+  .plot.clickable {
+    cursor: pointer;
   }
   .plot svg {
     width: 100%;
@@ -167,6 +190,12 @@
   .gl {
     stroke: var(--line2);
     stroke-width: 1;
+    vector-effect: non-scaling-stroke;
+  }
+  .vgl {
+    stroke: var(--line2);
+    stroke-width: 1;
+    opacity: 0.6;
     vector-effect: non-scaling-stroke;
   }
   .seg {
@@ -245,13 +274,26 @@
     position: absolute;
     left: 40px;
     right: 14px;
-    bottom: 6px;
-    height: 12px;
+    bottom: 4px;
+    height: 24px;
   }
-  .xax span {
+  .tick {
     position: absolute;
+    top: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    line-height: 1.2;
+    white-space: nowrap;
+  }
+  .tlabel {
+    font-size: 9.5px;
+    color: var(--muted);
+    font-weight: 600;
+  }
+  .tsub {
     font-size: 9px;
     color: var(--faint);
-    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
   }
 </style>

@@ -1,9 +1,19 @@
 <script lang="ts">
+  import { goto } from '$app/navigation';
   import OverlayChart from '$lib/components/OverlayChart.svelte';
 
   let { data } = $props();
 
   const viewLabel = { week: 'Week', month: 'Month', quarter: 'Quarter', year: 'Year' };
+
+  // Click a point: day views jump to that day's diary; the year view (weekly
+  // points) drills into that week's chart.
+  function pick(index: number) {
+    const d = data.dates[index];
+    if (!d) return;
+    if (data.granularity === 'week') goto(`/trends?view=week&ref=${d}`);
+    else goto(`/diary/${d}`);
+  }
 
   // Stable color per nutrient (by catalog position).
   const PALETTE = ['#ef8a3c', '#6f9e63', '#7c8896', '#2c2a27', '#c96442', '#5a8fb0', '#b08968', '#9a7bb0'];
@@ -90,7 +100,14 @@
   </div>
 
   <div class="card chartcard">
-    <OverlayChart dates={data.dates} {lines} granularity={data.granularity} height={300} />
+    <OverlayChart
+      dates={data.dates}
+      {lines}
+      ticks={data.ticks}
+      granularity={data.granularity}
+      onpick={pick}
+      height={300}
+    />
 
     {#if lines.length > 0}
       <div class="legend">

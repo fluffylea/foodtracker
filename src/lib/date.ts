@@ -103,6 +103,54 @@ export function periodLabel(view: TrendView, from: string, to: string): string {
   return String(f.getUTCFullYear());
 }
 
+export type AxisTick = { index: number; label: string; sub?: string };
+
+function fmtUTC(date: string, opts: Intl.DateTimeFormatOptions): string {
+  return new Date(date + 'T00:00:00Z').toLocaleDateString('en-US', { ...opts, timeZone: 'UTC' });
+}
+
+/**
+ * X-axis ticks tuned per view to surface patterns:
+ * - week: every day, labelled by weekday + day-of-month (spot weekend dips)
+ * - month: at each week-start day (the weekly rhythm)
+ * - quarter: at every other week-start (avoid crowding)
+ * - year: month names, every other month (points are weeks here)
+ */
+export function axisTicks(view: TrendView, dates: string[], weekStart: number): AxisTick[] {
+  const dow = (d: string) => new Date(d + 'T00:00:00Z').getUTCDay();
+  const ticks: AxisTick[] = [];
+
+  if (view === 'week') {
+    dates.forEach((d, i) =>
+      ticks.push({ index: i, label: fmtUTC(d, { weekday: 'short' }), sub: String(Number(d.slice(8, 10))) })
+    );
+  } else if (view === 'month') {
+    dates.forEach((d, i) => {
+      if (dow(d) === weekStart) ticks.push({ index: i, label: shortDayLabel(d) });
+    });
+  } else if (view === 'quarter') {
+    let k = 0;
+    dates.forEach((d, i) => {
+      if (dow(d) === weekStart) {
+        if (k % 2 === 0) ticks.push({ index: i, label: shortDayLabel(d) });
+        k++;
+      }
+    });
+  } else {
+    // year: points are weeks → label the first week of every other (odd) month
+    // (Jan, Mar, May, …), which avoids crowding and the partial week that a
+    // weekly bucketing pulls in from the previous December.
+    let lastMonth = '';
+    dates.forEach((d, i) => {
+      const m = d.slice(0, 7);
+      if (m === lastMonth) return;
+      lastMonth = m;
+      if (Number(d.slice(5, 7)) % 2 === 1) ticks.push({ index: i, label: fmtUTC(d, { month: 'short' }) });
+    });
+  }
+  return ticks;
+}
+
 /** Relative descriptor for a day vs today (Today / Yesterday / Tomorrow / null). */
 export function relativeLabel(date: string, today: string): string | null {
   if (date === today) return 'Today';

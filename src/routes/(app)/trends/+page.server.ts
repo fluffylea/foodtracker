@@ -1,4 +1,4 @@
-import { addDays, isValidDate, periodBounds, periodLabel, todayInTz, type TrendView } from '$lib/date';
+import { addDays, axisTicks, isValidDate, periodBounds, periodLabel, todayInTz, type TrendView } from '$lib/date';
 import { nutrientCatalog } from '$lib/server/foods';
 import { rangeTotals, aggregateWeekly } from '$lib/server/trends';
 import type { PageServerLoad } from './$types';
@@ -26,6 +26,7 @@ export const load: PageServerLoad = ({ locals, url }) => {
     catalog: nutrientCatalog(),
     dates: totals.dates,
     series: totals.series,
+    ticks: axisTicks(view, totals.dates, user.weekStart),
     granularity,
     view,
     views: VIEWS,
