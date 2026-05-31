@@ -238,6 +238,7 @@
     display: flex;
     flex-direction: column;
     gap: 5px;
+    min-width: 0;
   }
   .field > span,
   .nfield > span {
@@ -256,6 +257,8 @@
     font-weight: 400;
   }
   .field input {
+    width: 100%;
+    min-width: 0;
     border: 1px solid var(--line);
     border-radius: 9px;
     padding: 9px 11px;
@@ -271,10 +274,12 @@
     display: flex;
     flex-direction: column;
     gap: 4px;
+    min-width: 0;
   }
   .nb {
     display: flex;
     align-items: center;
+    min-width: 0;
     border: 1px solid var(--line);
     border-radius: 8px;
     background: #fff;
@@ -284,9 +289,15 @@
     border: none;
     outline: none;
     width: 100%;
+    min-width: 0;
     padding: 8px 0;
     font-size: 13px;
     background: transparent;
+  }
+  @media (max-width: 560px) {
+    .ngrid {
+      grid-template-columns: repeat(2, 1fr);
+    }
   }
   .nb em {
     font-style: normal;

@@ -579,6 +579,7 @@
     display: flex;
     flex-direction: column;
     gap: 4px;
+    min-width: 0;
   }
   .nlabel {
     font-size: 10px;
@@ -590,6 +591,7 @@
   .nb {
     display: flex;
     align-items: center;
+    min-width: 0;
     border: 1px solid var(--line);
     border-radius: 8px;
     background: #fff;
@@ -607,6 +609,7 @@
     border: none;
     outline: none;
     width: 100%;
+    min-width: 0;
     padding: 7px 0;
     font-size: 13px;
     background: transparent;

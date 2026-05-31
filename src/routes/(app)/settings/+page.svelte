@@ -279,6 +279,7 @@
     display: flex;
     flex-direction: column;
     gap: 5px;
+    min-width: 0;
   }
   .field span {
     font-size: 10.5px;
@@ -288,6 +289,8 @@
     font-weight: 600;
   }
   .field input {
+    width: 100%;
+    min-width: 0;
     border: 1px solid var(--line);
     border-radius: 9px;
     padding: 8px 10px;
