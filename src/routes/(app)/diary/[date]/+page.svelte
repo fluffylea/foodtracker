@@ -156,7 +156,7 @@
 
 {#if modal}
   {#key modalKey}
-    <AddEntryModal foods={data.foods} editing={modal.editing} onclose={() => (modal = null)} />
+    <AddEntryModal foods={data.foods} catalog={data.catalog} editing={modal.editing} onclose={() => (modal = null)} />
   {/key}
 {/if}
 

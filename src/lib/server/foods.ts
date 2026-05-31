@@ -17,6 +17,7 @@ export type FoodDetail = {
   id: number;
   name: string;
   brand: string | null;
+  barcode: string | null;
   source: 'off' | 'local';
   kind: 'item' | 'recipe';
   originRef: string | null;
@@ -28,6 +29,7 @@ export type FoodDetail = {
 export type FoodInput = {
   name: string;
   brand: string | null;
+  barcode: string | null;
   // nutrientId -> per-100g value; null/absent = unknown
   nutrients: Record<number, number | null>;
   units: { name: string; grams: number; isDefault: boolean }[];
@@ -88,9 +90,12 @@ export type PickerFood = {
   id: number;
   name: string;
   brand: string | null;
+  barcode: string | null;
   source: 'off' | 'local';
   originRef: string | null;
   energyPer100g: number | null;
+  // nutrientId -> per-100g value (for the scaled breakdown in the add dialog)
+  nutrients: Record<number, number>;
   units: { id: number; name: string; grams: number; isDefault: boolean }[];
 };
 
@@ -109,13 +114,17 @@ export function listFoodsForPicker(userId: number): PickerFood[] {
   if (rows.length === 0) return [];
 
   const ids = rows.map((r) => r.id);
-  const energy = db
-    .select({ foodId: foodNutrients.foodId, per100g: foodNutrients.per100g })
-    .from(foodNutrients)
-    .innerJoin(nutrients, eq(foodNutrients.nutrientId, nutrients.id))
-    .where(and(inArray(foodNutrients.foodId, ids), eq(nutrients.key, 'energy')))
-    .all();
-  const energyByFood = new Map(energy.map((e) => [e.foodId, e.per100g]));
+  const energyId = nutrientKeyToId().get('energy') ?? null;
+
+  // All per-100g nutrients for these foods (one query), grouped per food.
+  const nrows = db.select().from(foodNutrients).where(inArray(foodNutrients.foodId, ids)).all();
+  const nutrientsByFood = new Map<number, Record<number, number>>();
+  for (const n of nrows) {
+    if (n.per100g === null) continue;
+    const m = nutrientsByFood.get(n.foodId) ?? {};
+    m[n.nutrientId] = n.per100g;
+    nutrientsByFood.set(n.foodId, m);
+  }
 
   const unitRows = db
     .select()
@@ -130,35 +139,46 @@ export function listFoodsForPicker(userId: number): PickerFood[] {
     unitsByFood.set(u.foodId, list);
   }
 
-  return rows.map((r) => ({
-    id: r.id,
-    name: r.name,
-    brand: r.brand,
-    source: r.source,
-    originRef: r.originRef,
-    energyPer100g: energyByFood.get(r.id) ?? null,
-    units: unitsByFood.get(r.id) ?? []
-  }));
+  return rows.map((r) => {
+    const nmap = nutrientsByFood.get(r.id) ?? {};
+    return {
+      id: r.id,
+      name: r.name,
+      brand: r.brand,
+      barcode: r.barcode,
+      source: r.source,
+      originRef: r.originRef,
+      energyPer100g: energyId !== null ? (nmap[energyId] ?? null) : null,
+      nutrients: nmap,
+      units: unitsByFood.get(r.id) ?? []
+    };
+  });
+}
+
+/** Per-100g nutrient map for one food: nutrientId -> value (known only). */
+function nutrientMapFor(id: number): Record<number, number> {
+  const rows = db.select().from(foodNutrients).where(eq(foodNutrients.foodId, id)).all();
+  const m: Record<number, number> = {};
+  for (const n of rows) if (n.per100g !== null) m[n.nutrientId] = n.per100g;
+  return m;
 }
 
 /** Picker shape for a single food by id (used after OFF import/override). */
 export function pickerFoodById(id: number): PickerFood | null {
   const r = db.select().from(foods).where(eq(foods.id, id)).get();
   if (!r) return null;
-  const energy = db
-    .select({ per100g: foodNutrients.per100g })
-    .from(foodNutrients)
-    .innerJoin(nutrients, eq(foodNutrients.nutrientId, nutrients.id))
-    .where(and(eq(foodNutrients.foodId, id), eq(nutrients.key, 'energy')))
-    .get();
+  const nmap = nutrientMapFor(id);
+  const energyId = nutrientKeyToId().get('energy') ?? null;
   const unitRows = db.select().from(foodUnits).where(eq(foodUnits.foodId, id)).orderBy(asc(foodUnits.id)).all();
   return {
     id: r.id,
     name: r.name,
     brand: r.brand,
+    barcode: r.barcode,
     source: r.source,
     originRef: r.originRef,
-    energyPer100g: energy?.per100g ?? null,
+    energyPer100g: energyId !== null ? (nmap[energyId] ?? null) : null,
+    nutrients: nmap,
     units: unitRows.map((u) => ({ id: u.id, name: u.name, grams: u.grams, isDefault: u.isDefault }))
   };
 }
@@ -267,6 +287,7 @@ export function getFood(userId: number, id: number): FoodDetail | null {
     id: food.id,
     name: food.name,
     brand: food.brand,
+    barcode: food.barcode,
     source: food.source,
     kind: food.kind,
     originRef: food.originRef,
@@ -295,7 +316,7 @@ function writeNutrientsAndUnits(foodId: number, input: FoodInput) {
 export function createFood(userId: number, input: FoodInput): number {
   const inserted = db
     .insert(foods)
-    .values({ ownerUserId: userId, source: 'local', kind: 'item', name: input.name, brand: input.brand })
+    .values({ ownerUserId: userId, source: 'local', kind: 'item', name: input.name, brand: input.brand, barcode: input.barcode })
     .returning({ id: foods.id })
     .get();
   writeNutrientsAndUnits(inserted.id, input);
@@ -312,7 +333,7 @@ export function updateFood(userId: number, id: number, input: FoodInput): boolea
   if (!owned) return false;
 
   db.update(foods)
-    .set({ name: input.name, brand: input.brand, updatedAt: Math.floor(Date.now() / 1000) })
+    .set({ name: input.name, brand: input.brand, barcode: input.barcode, updatedAt: Math.floor(Date.now() / 1000) })
     .where(eq(foods.id, id))
     .run();
   writeNutrientsAndUnits(id, input);

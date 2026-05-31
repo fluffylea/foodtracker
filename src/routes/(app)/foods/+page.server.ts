@@ -36,6 +36,7 @@ function parseInput(raw: string | null): { input: FoodInput } | { error: string 
   const name = String(p.name ?? '').trim();
   if (!name) return { error: 'Name is required.' };
   const brand = p.brand ? String(p.brand).trim() || null : null;
+  const barcode = p.barcode ? String(p.barcode).trim() || null : null;
 
   // Nutrients: keep only finite numbers; everything else is "unknown".
   const nutrients: Record<number, number | null> = {};
@@ -61,7 +62,7 @@ function parseInput(raw: string | null): { input: FoodInput } | { error: string 
   }
   if (defaults > 1) return { error: 'Only one unit can be the default.' };
 
-  return { input: { name, brand, nutrients, units } };
+  return { input: { name, brand, barcode, nutrients, units } };
 }
 
 export const actions: Actions = {

@@ -224,6 +224,11 @@ tile grid runs off-screen). Planned responsive steps, to do during final polish:
 - General: fluid paddings, min-width guards on rows, wrap long labels.
 Tracked here so it isn't forgotten; not blocking feature milestones.
 
+**Perf note:** the add-food picker (`listFoodsForPicker`) preloads every local
+*and shared OFF-cache* food with full per-100g nutrients into each diary page.
+Fine at this scale, but the shared cache grows as OFF foods are logged — later,
+bound it (recent/frequent foods only, or fetch full nutrients on select).
+
 ## 11. Security backlog (deferred, hand-rolled auth kept)
 
 Auth uses standard primitives (scrypt, hashed 256-bit session tokens, httpOnly/Lax

@@ -2,14 +2,16 @@
   import { untrack } from 'svelte';
   import { enhance } from '$app/forms';
   import type { PickerFood } from '$lib/server/foods';
+  import type { Nutrient } from '$lib/server/db/schema';
 
   type Editing = { id: number; foodId: number; amount: number; unitId: number | null };
 
   let {
     foods,
+    catalog,
     editing = null,
     onclose
-  }: { foods: PickerFood[]; editing?: Editing | null; onclose: () => void } = $props();
+  }: { foods: PickerFood[]; catalog: Nutrient[]; editing?: Editing | null; onclose: () => void } = $props();
 
   const init = untrack(() => {
     if (editing) {
@@ -32,7 +34,11 @@
     foods.filter((f) => {
       const q = query.trim().toLowerCase();
       if (!q) return true;
-      return f.name.toLowerCase().includes(q) || (f.brand ?? '').toLowerCase().includes(q);
+      return (
+        f.name.toLowerCase().includes(q) ||
+        (f.brand ?? '').toLowerCase().includes(q) ||
+        (f.barcode ?? '').includes(q)
+      );
     })
   );
 
@@ -112,18 +118,40 @@
     }
   }
 
-  // Live gram + energy preview.
+  // grams in one of the currently-selected unit.
+  const curUnitGrams = $derived.by(() => {
+    if (unitId === 'g') return 1;
+    const u = selected?.units.find((x) => String(x.id) === unitId);
+    return u ? u.grams : 1;
+  });
   const grams = $derived.by(() => {
     const a = Number(amount);
     if (!(a > 0) || !selected) return 0;
-    if (unitId === 'g') return a;
-    const u = selected.units.find((x) => String(x.id) === unitId);
-    return u ? a * u.grams : a;
+    return a * curUnitGrams;
   });
-  const energyPreview = $derived.by(() => {
-    if (!selected || selected.energyPer100g === null) return null;
-    return Math.round((selected.energyPer100g * grams) / 100);
-  });
+
+  // Catalog nutrients this food has a value for (the scaled breakdown rows).
+  const breakdown = $derived(catalog.filter((n) => selected && selected.nutrients[n.id] !== undefined));
+
+  function scaled(n: Nutrient): string {
+    if (!selected) return '';
+    const per100 = selected.nutrients[n.id];
+    if (per100 === undefined) return '';
+    const v = (per100 * grams) / 100;
+    return n.unit === 'kcal' ? String(Math.round(v)) : String(Math.round(v * 10) / 10);
+  }
+
+  // Edit a nutrient → back-compute the amount so that nutrient hits the value.
+  function setFromNutrient(n: Nutrient, valStr: string) {
+    if (!selected) return;
+    const per100 = selected.nutrients[n.id];
+    if (!per100 || per100 <= 0) return; // can't reverse a zero/missing value
+    const val = Number(valStr);
+    if (!(val >= 0)) return;
+    const targetGrams = (val * 100) / per100;
+    if (curUnitGrams <= 0) return;
+    amount = String(Math.round((targetGrams / curUnitGrams) * 100) / 100);
+  }
 
   function onResult(result: { type: string }) {
     if (result.type === 'success') onclose();
@@ -228,10 +256,29 @@
               </label>
             </div>
 
-            <div class="preview">
-              <span>{grams ? `${Math.round(grams * 100) / 100} g` : '—'}</span>
-              {#if energyPreview !== null}<b>{energyPreview} kcal</b>{/if}
-            </div>
+            <div class="grams-line">= {grams ? `${Math.round(grams * 100) / 100} g` : '—'}</div>
+
+            {#if breakdown.length > 0}
+              <div class="breakdown">
+                {#each breakdown as n (n.id)}
+                  <label class="nrow">
+                    <span class="nlabel">{n.name}</span>
+                    <span class="nb">
+                      <input
+                        type="number"
+                        step="any"
+                        min="0"
+                        inputmode="decimal"
+                        value={scaled(n)}
+                        onchange={(e) => setFromNutrient(n, e.currentTarget.value)}
+                      />
+                      <em>{n.unit}</em>
+                    </span>
+                  </label>
+                {/each}
+              </div>
+              <p class="hint">Edit any value to scale the amount to it.</p>
+            {/if}
 
             <!-- Primary action is first in the DOM so Enter submits Save/Add,
                  not the destructive Remove; row-reverse puts Remove on the left. -->
@@ -444,21 +491,56 @@
   .field input {
     width: 96px;
   }
-  .preview {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-top: 12px;
-    padding: 10px 12px;
-    background: var(--panel);
-    border: 1px solid var(--line2);
-    border-radius: 9px;
-    font-size: 13px;
+  .grams-line {
+    margin-top: 10px;
+    font-size: 12px;
     color: var(--muted);
   }
-  .preview b {
-    color: var(--ink);
+  .breakdown {
+    margin-top: 10px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  .nrow {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .nlabel {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--muted);
+    font-weight: 600;
+  }
+  .nb {
+    display: flex;
+    align-items: center;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #fff;
+    padding: 0 9px;
+  }
+  .nb input {
+    border: none;
+    outline: none;
+    width: 100%;
+    padding: 7px 0;
+    font-size: 13px;
+    background: transparent;
     font-variant-numeric: tabular-nums;
+  }
+  .nb em {
+    font-style: normal;
+    color: var(--faint);
+    font-size: 10.5px;
+    margin-left: 4px;
+  }
+  .hint {
+    margin: 8px 0 0;
+    font-size: 11.5px;
+    color: var(--faint);
   }
   .mfoot {
     display: flex;

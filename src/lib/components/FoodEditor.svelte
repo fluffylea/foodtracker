@@ -25,6 +25,7 @@
     return {
       name: food?.name ?? '',
       brand: food?.brand ?? '',
+      barcode: food?.barcode ?? '',
       nutrients: nutrientStrings,
       units: unitRows,
       defaultSel: (di >= 0 ? di : 'base') as number | 'base'
@@ -34,6 +35,7 @@
   // Local editable state.
   let name = $state(initial.name);
   let brand = $state(initial.brand);
+  let barcode = $state(initial.barcode);
   let nutrientVals = $state<Record<number, string>>(initial.nutrients);
   let units = $state(initial.units);
   // Which row is the default unit: a named-unit index, or 'base' (grams).
@@ -56,6 +58,7 @@
     JSON.stringify({
       name: name.trim(),
       brand: brand.trim() || null,
+      barcode: barcode.trim() || null,
       nutrients: Object.fromEntries(
         Object.entries(nutrientVals).map(([id, v]) => [id, v === '' ? null : Number(v)])
       ),
@@ -98,6 +101,7 @@
     <label class="field"><span>Name</span><input bind:value={name} required placeholder="e.g. Granola, honey" /></label>
     <label class="field"><span>Brand <em>optional</em></span><input bind:value={brand} placeholder="—" /></label>
   </div>
+  <label class="field bc"><span>Barcode <em>optional</em></span><input bind:value={barcode} inputmode="numeric" placeholder="—" /></label>
 
   <div class="sec">Nutrition · per 100 g <em>blank = unknown</em></div>
   <div class="ngrid">
@@ -226,6 +230,9 @@
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 10px;
+  }
+  .field.bc {
+    margin-top: 10px;
   }
   .field {
     display: flex;

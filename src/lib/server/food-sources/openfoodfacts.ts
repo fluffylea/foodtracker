@@ -69,12 +69,41 @@ type OffProductRaw = {
   serving_quantity?: unknown;
 };
 
+/** Fetch one product by barcode from the reliable product API. */
+async function getProduct(ref: string): Promise<SourceProduct | null> {
+  const url = `${BASE}/api/v2/product/${encodeURIComponent(ref)}?fields=${FIELDS}`;
+  const data = (await offFetch(url)) as { product?: OffProductRaw } | null;
+  const p = data?.product;
+  if (!p || !p.code) return null;
+  const name = (p.product_name ?? '').trim();
+  if (!name) return null;
+  const servingGrams = num(p.serving_quantity);
+  return {
+    ref: p.code,
+    name,
+    brand: brandOf(p.brands),
+    nutrients: mapNutriments(p.nutriments),
+    servingGrams: servingGrams && servingGrams > 0 ? servingGrams : null
+  };
+}
+
+const BARCODE_RE = /^\d{6,14}$/;
+
 export const openFoodFacts: FoodSource = {
   id: 'off',
 
   async search(query, limit = 20) {
     const q = query.trim();
     if (q.length < 2) return [];
+
+    // A bare number is a barcode → look the product up directly (text search
+    // doesn't match on codes).
+    if (BARCODE_RE.test(q)) {
+      const p = await getProduct(q);
+      if (p) return [{ ref: p.ref, name: p.name, brand: p.brand, energyPer100g: p.nutrients.energy ?? null }];
+      return [];
+    }
+
     const url =
       `${SEARCH_BASE}/search?q=${encodeURIComponent(q)}` +
       `&page_size=${limit}&fields=code,product_name,brands,nutriments`;
@@ -91,22 +120,7 @@ export const openFoodFacts: FoodSource = {
     return results;
   },
 
-  async getByRef(ref) {
-    const url = `${BASE}/api/v2/product/${encodeURIComponent(ref)}?fields=${FIELDS}`;
-    const data = (await offFetch(url)) as { product?: OffProductRaw; status?: number } | null;
-    const p = data?.product;
-    if (!p || !p.code) return null;
-    const name = (p.product_name ?? '').trim();
-    if (!name) return null;
-
-    const servingGrams = num(p.serving_quantity);
-    const product: SourceProduct = {
-      ref: p.code,
-      name,
-      brand: brandOf(p.brands),
-      nutrients: mapNutriments(p.nutriments),
-      servingGrams: servingGrams && servingGrams > 0 ? servingGrams : null
-    };
-    return product;
+  getByRef(ref) {
+    return getProduct(ref);
   }
 };
