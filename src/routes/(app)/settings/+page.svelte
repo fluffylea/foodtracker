@@ -22,6 +22,9 @@
       <dt>Timezone</dt><dd>{me.timezone}</dd>
     </dl>
     <p class="hint">Energy-unit and timezone editing land in a later milestone.</p>
+    <form method="POST" action="/logout" class="logout-row">
+      <button class="logout-btn" type="submit">Log out</button>
+    </form>
   </section>
 
   <section class="card block">
@@ -145,6 +148,22 @@
     margin: 14px 0 0;
     font-size: 12px;
     color: var(--faint);
+  }
+  .logout-row {
+    margin: 14px 0 0;
+  }
+  .logout-btn {
+    border: 1px solid var(--line);
+    background: #fff;
+    color: var(--muted);
+    font-size: 13px;
+    padding: 8px 16px;
+    border-radius: 9px;
+    cursor: pointer;
+  }
+  .logout-btn:hover {
+    color: var(--over);
+    border-color: #ecc6b8;
   }
   .pref {
     display: flex;

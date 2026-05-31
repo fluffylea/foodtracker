@@ -222,4 +222,19 @@
     overflow: auto;
     padding: 16px 18px;
   }
+
+  @media (max-width: 560px) {
+    .backdrop {
+      padding: 0;
+      place-items: end stretch;
+    }
+    .modal {
+      max-width: none;
+      max-height: 92dvh;
+      border-radius: 16px 16px 0 0;
+    }
+    .modal-scroll {
+      padding-bottom: max(16px, env(safe-area-inset-bottom));
+    }
+  }
 </style>

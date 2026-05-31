@@ -374,6 +374,11 @@
     gap: 9px;
     align-items: stretch;
   }
+  @media (max-width: 560px) {
+    .tiles {
+      grid-template-columns: repeat(2, 1fr);
+    }
+  }
   .tile-wrap {
     display: flex;
   }

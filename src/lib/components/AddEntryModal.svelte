@@ -631,4 +631,30 @@
     height: 100%;
     min-height: 140px;
   }
+
+  /* Mobile: full-width bottom sheet; the two panes stack. */
+  @media (max-width: 560px) {
+    .backdrop {
+      padding: 0;
+      place-items: end stretch;
+    }
+    .modal {
+      max-width: none;
+      max-height: 92dvh;
+      border-radius: 16px 16px 0 0;
+    }
+    .mbody {
+      flex-direction: column;
+    }
+    .left {
+      width: auto;
+      border-right: none;
+      border-bottom: 1px solid var(--line);
+      max-height: 38vh;
+    }
+    .right {
+      overflow: auto;
+      padding-bottom: max(14px, env(safe-area-inset-bottom));
+    }
+  }
 </style>

@@ -18,6 +18,12 @@
     return tabs.some((t) => t.id === seg) ? seg : '';
   });
   const onSettings = $derived($page.url.pathname.startsWith('/settings'));
+
+  // Mobile bottom bar = content tabs + the account/settings entry.
+  const bottomTabs = [...tabs, { id: 'settings', label: 'Settings', href: '/settings' }];
+  function tabActive(id: string) {
+    return id === 'settings' ? onSettings : active === id;
+  }
 </script>
 
 <div class="shell">
@@ -44,12 +50,22 @@
   <main class="main">
     {@render children()}
   </main>
+
+  <nav class="bottombar">
+    {#each bottomTabs as tab (tab.id)}
+      <a class="btab" class:on={tabActive(tab.id)} href={tab.href}>
+        <Icon name={tab.id} size={22} />
+        <span>{tab.label}</span>
+      </a>
+    {/each}
+  </nav>
 </div>
 
 <style>
   .shell {
     display: flex;
     height: 100vh;
+    height: 100dvh;
     background: var(--panel);
   }
   .rail {
@@ -175,5 +191,51 @@
     display: flex;
     flex-direction: column;
     overflow: auto;
+  }
+
+  /* Mobile bottom tab bar (hidden on desktop). */
+  .bottombar {
+    display: none;
+  }
+
+  @media (max-width: 768px) {
+    .rail {
+      display: none;
+    }
+    .main {
+      /* clear the fixed bottom bar */
+      padding-bottom: calc(58px + env(safe-area-inset-bottom));
+    }
+    .bottombar {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      z-index: 40;
+      display: flex;
+      background: #fff;
+      border-top: 1px solid var(--line);
+      padding-bottom: env(safe-area-inset-bottom);
+    }
+    .btab {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 3px;
+      padding: 9px 0 7px;
+      color: var(--muted);
+      font-size: 10px;
+      font-weight: 600;
+    }
+    .btab :global(svg) {
+      opacity: 0.7;
+    }
+    .btab.on {
+      color: var(--accent-ink);
+    }
+    .btab.on :global(svg) {
+      opacity: 1;
+    }
   }
 </style>

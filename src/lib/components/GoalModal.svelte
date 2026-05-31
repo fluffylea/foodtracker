@@ -250,4 +250,18 @@
   .cta:hover {
     background: var(--accent-ink);
   }
+
+  @media (max-width: 560px) {
+    .backdrop {
+      padding: 0;
+      place-items: end stretch;
+    }
+    .modal {
+      max-width: none;
+      border-radius: 16px 16px 0 0;
+    }
+    .mbody {
+      padding-bottom: max(16px, env(safe-area-inset-bottom));
+    }
+  }
 </style>
