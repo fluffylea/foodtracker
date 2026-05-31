@@ -29,7 +29,10 @@
   } = $props();
 
   const init = untrack(() => {
-    const mealId = editing ? editing.mealGroupId : defaultMealGroupId;
+    // Every entry belongs to a real meal; default to the add-context meal or
+    // the first available one.
+    const firstMeal = mealGroups[0]?.id ?? null;
+    const mealId = editing ? (editing.mealGroupId ?? firstMeal) : (defaultMealGroupId ?? firstMeal);
     const mealGroupId = mealId === null || mealId === undefined ? '' : String(mealId);
     if (editing) {
       const food = foods.find((f) => f.id === editing.foodId) ?? null;
@@ -283,7 +286,6 @@
               <label class="field meal-field">
                 <span>Meal</span>
                 <select bind:value={mealGroupId}>
-                  <option value="">Unsorted</option>
                   {#each mealGroups as m (m.id)}
                     <option value={String(m.id)}>{m.name}</option>
                   {/each}

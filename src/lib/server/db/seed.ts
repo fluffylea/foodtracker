@@ -1,7 +1,8 @@
 import { db } from './index';
-import { nutrients, users } from './schema';
+import { nutrients, users, diaryEntries } from './schema';
 import { hashPassword } from '../auth/password';
-import { eq, sql } from 'drizzle-orm';
+import { findOrCreateLogMeal } from '../mealgroups';
+import { eq, and, isNull, sql } from 'drizzle-orm';
 
 /** Default nutrient catalog (DESIGN.md §3). `key` is the stable machine id. */
 export const DEFAULT_NUTRIENTS: { key: string; name: string; unit: string }[] = [
@@ -37,6 +38,22 @@ export async function seed() {
       .run();
     console.log(`[seed] created admin user: ${email}`);
   }
+
+  // One-time: move legacy un-mealed entries into each user's 'Log' meal, so
+  // every entry belongs to a real meal. Idempotent (no nulls remain after).
+  const orphanUsers = db
+    .selectDistinct({ userId: diaryEntries.userId })
+    .from(diaryEntries)
+    .where(isNull(diaryEntries.mealGroupId))
+    .all();
+  for (const { userId } of orphanUsers) {
+    const logId = findOrCreateLogMeal(userId);
+    db.update(diaryEntries)
+      .set({ mealGroupId: logId })
+      .where(and(eq(diaryEntries.userId, userId), isNull(diaryEntries.mealGroupId)))
+      .run();
+  }
+  if (orphanUsers.length) console.log(`[seed] migrated un-mealed entries for ${orphanUsers.length} user(s)`);
 }
 
 /** Look up a nutrient id by key (used by importers/tests). */

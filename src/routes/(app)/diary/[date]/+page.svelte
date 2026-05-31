@@ -41,7 +41,11 @@
   function entriesFor(mealId: number | null) {
     return data.entries.filter((e) => e.mealGroupId === mealId);
   }
-  const unsortedEntries = $derived(entriesFor(null));
+  // The default "Log" bucket: entries with no meal, plus any whose meal isn't
+  // visible on this day (e.g. its meal was removed) so they're never orphaned.
+  const unsortedEntries = $derived(
+    data.entries.filter((e) => e.mealGroupId === null || !mealById.has(e.mealGroupId))
+  );
   function subtotal(es: (typeof data.entries)) {
     return es.reduce((s, e) => s + (e.energy ?? 0), 0);
   }
@@ -228,7 +232,7 @@
             <span class="meal-name plain">{meal.name}</span>
           {/if}
           <span class="meal-sum">{Math.round(subtotal(es)).toLocaleString()} kcal</span>
-          {#if isToday}
+          {#if isToday && mealOrder.length > 1}
             <form method="POST" action="?/removeMeal" use:enhance class="meal-del-form">
               <input type="hidden" name="id" value={mid} />
               <button class="meal-del" type="submit" title="Remove meal" aria-label="Remove meal">✕</button>
@@ -240,11 +244,12 @@
     {/if}
   {/each}
 
-  <!-- Default "Log" meal: the bucket for entries with no meal. -->
-  {#if data.mealGroups.length === 0 || unsortedEntries.length > 0}
+  <!-- Safety net: entries whose meal isn't visible on this day (shouldn't
+       normally happen now that every entry has a real meal). -->
+  {#if unsortedEntries.length > 0}
     <section class="meal-sec">
       <div class="sec-h meal-head">
-        <span class="meal-name plain">Log</span>
+        <span class="meal-name plain">Unsorted</span>
         <span class="meal-sum">{Math.round(subtotal(unsortedEntries)).toLocaleString()} kcal</span>
       </div>
       {@render logBody(unsortedEntries, null)}

@@ -8,7 +8,8 @@ import {
   createMealGroup,
   renameMealGroup,
   removeMealGroup,
-  reorderMealGroups
+  reorderMealGroups,
+  ensureDefaultMeal
 } from '$lib/server/mealgroups';
 import type { Actions, PageServerLoad } from './$types';
 
@@ -20,6 +21,7 @@ export const load: PageServerLoad = ({ params, locals }) => {
   if (!isValidDate(params.date)) error(404, 'Invalid date');
 
   const date = params.date;
+  ensureDefaultMeal(user.id); // every user always has at least a 'Log' meal
   const day = getDay(user.id, date);
 
   return {
@@ -170,7 +172,8 @@ export const actions: Actions = {
     const today = todayInTz(user.timezone);
     const id = Number((await request.formData()).get('id'));
     if (!Number.isInteger(id)) return fail(400, { error: 'Invalid meal.' });
-    removeMealGroup(user.id, id, today);
+    const result = removeMealGroup(user.id, id, today);
+    if (result === 'last-meal') return fail(400, { error: "Can't remove your only meal." });
     return { mealRemoved: true };
   },
 

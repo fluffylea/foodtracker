@@ -1,13 +1,41 @@
-import { and, eq, lte, gt, or, isNull, asc } from 'drizzle-orm';
+import { and, eq, lte, gt, gte, or, isNull, asc } from 'drizzle-orm';
 import { db } from './db/index';
-import { mealGroups } from './db/schema';
+import { mealGroups, diaryEntries } from './db/schema';
 import type { MealGroup } from './db/schema';
+
+const BACKDATE = '2000-01-01'; // default 'Log' meal is visible on every day
 
 /**
  * Meals are effective-dated (DESIGN.md §4, like goals): a meal is visible on
  * day D when effective_from <= D < (removed_from ?? ∞). Removing a meal sets
  * removed_from = today, so past days keep the meal and its entries.
  */
+
+/** Find the user's 'Log' meal, or create it (backdated). Returns its id. */
+export function findOrCreateLogMeal(userId: number): number {
+  const existing = db
+    .select({ id: mealGroups.id })
+    .from(mealGroups)
+    .where(and(eq(mealGroups.userId, userId), eq(mealGroups.name, 'Log')))
+    .orderBy(asc(mealGroups.id))
+    .get();
+  if (existing) return existing.id;
+  const inserted = db
+    .insert(mealGroups)
+    .values({ userId, name: 'Log', sortOrder: 0, effectiveFrom: BACKDATE, removedFrom: null })
+    .returning({ id: mealGroups.id })
+    .get();
+  return inserted.id;
+}
+
+/**
+ * Guarantee the user has at least one meal. New users get a default 'Log' meal
+ * (backdated so it's visible on every day). Idempotent.
+ */
+export function ensureDefaultMeal(userId: number): void {
+  const any = db.select({ id: mealGroups.id }).from(mealGroups).where(eq(mealGroups.userId, userId)).get();
+  if (!any) findOrCreateLogMeal(userId);
+}
 
 /** A user's meals visible on `date`, in display order. */
 export function listMealGroups(userId: number, date: string): MealGroup[] {
@@ -71,17 +99,28 @@ export function renameMealGroup(userId: number, id: number, name: string): boole
   return res.changes > 0;
 }
 
+export type RemoveResult = 'ok' | 'not-found' | 'last-meal';
+
 /**
- * Soft-remove a meal from `today` forward. Past days keep it (and its entries).
- * If it was created today (never had a past), it becomes invisible everywhere.
+ * Soft-remove a meal from `today` forward (past days keep it and its entries),
+ * and delete this meal's entries dated today or later. The last meal visible
+ * today cannot be removed — a day must always have at least one meal.
  */
-export function removeMealGroup(userId: number, id: number, today: string): boolean {
-  const res = db
-    .update(mealGroups)
+export function removeMealGroup(userId: number, id: number, today: string): RemoveResult {
+  if (!mealGroupVisibleOn(userId, id, today)) return 'not-found';
+  if (listMealGroups(userId, today).length <= 1) return 'last-meal';
+
+  db.update(mealGroups)
     .set({ removedFrom: today })
     .where(and(eq(mealGroups.id, id), eq(mealGroups.userId, userId)))
     .run();
-  return res.changes > 0;
+  // Today/future entries in this meal are removed with it (past stays).
+  db.delete(diaryEntries)
+    .where(
+      and(eq(diaryEntries.userId, userId), eq(diaryEntries.mealGroupId, id), gte(diaryEntries.date, today))
+    )
+    .run();
+  return 'ok';
 }
 
 /** Persist a new meal order (ids in desired sequence). Order is global. */
