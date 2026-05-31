@@ -32,6 +32,27 @@ export function formatDayLabel(date: string): string {
   return `${wd} · ${md}`;
 }
 
+/** Inclusive list of 'YYYY-MM-DD' from `from` to `to`. */
+export function enumerateDays(from: string, to: string): string[] {
+  const out: string[] = [];
+  let d = from;
+  // Guard against accidental huge/reversed ranges.
+  for (let i = 0; i < 1000 && d <= to; i++) {
+    out.push(d);
+    d = addDays(d, 1);
+  }
+  return out;
+}
+
+/** Short axis label for a day, e.g. "May 28". */
+export function shortDayLabel(date: string): string {
+  return new Date(date + 'T00:00:00Z').toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    timeZone: 'UTC'
+  });
+}
+
 /** Relative descriptor for a day vs today (Today / Yesterday / Tomorrow / null). */
 export function relativeLabel(date: string, today: string): string | null {
   if (date === today) return 'Today';

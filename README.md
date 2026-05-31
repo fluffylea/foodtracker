@@ -11,7 +11,9 @@ See [DESIGN.md](DESIGN.md) for the full design and roadmap.
 > effective-dated meal groups — the diary log shows entries under lightweight
 > per-meal sections with subtotals; meals are added/removed effective today (past
 > days keep theirs, like goals), with a default "Log" bucket and today-only
-> management (m7). Graphs follow next.
+> management (m7), and a Trends view — an overlay line chart of nutrient totals
+> over a selectable range (week/month/3M/year) with toggleable metric chips, each
+> normalized to its own range so different scales overlay (m8).
 
 ## Stack
 
