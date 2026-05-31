@@ -1,6 +1,7 @@
 import { and, or, eq, isNull, inArray, asc } from 'drizzle-orm';
 import { db } from './db/index';
 import { foods, foodNutrients, foodUnits, nutrients } from './db/schema';
+import { openFoodFacts } from './food-sources/openfoodfacts';
 
 export type FoodListItem = {
   id: number;
@@ -88,6 +89,7 @@ export type PickerFood = {
   name: string;
   brand: string | null;
   source: 'off' | 'local';
+  originRef: string | null;
   energyPer100g: number | null;
   units: { id: number; name: string; grams: number; isDefault: boolean }[];
 };
@@ -133,9 +135,108 @@ export function listFoodsForPicker(userId: number): PickerFood[] {
     name: r.name,
     brand: r.brand,
     source: r.source,
+    originRef: r.originRef,
     energyPer100g: energyByFood.get(r.id) ?? null,
     units: unitsByFood.get(r.id) ?? []
   }));
+}
+
+/** Picker shape for a single food by id (used after OFF import/override). */
+export function pickerFoodById(id: number): PickerFood | null {
+  const r = db.select().from(foods).where(eq(foods.id, id)).get();
+  if (!r) return null;
+  const energy = db
+    .select({ per100g: foodNutrients.per100g })
+    .from(foodNutrients)
+    .innerJoin(nutrients, eq(foodNutrients.nutrientId, nutrients.id))
+    .where(and(eq(foodNutrients.foodId, id), eq(nutrients.key, 'energy')))
+    .get();
+  const unitRows = db.select().from(foodUnits).where(eq(foodUnits.foodId, id)).orderBy(asc(foodUnits.id)).all();
+  return {
+    id: r.id,
+    name: r.name,
+    brand: r.brand,
+    source: r.source,
+    originRef: r.originRef,
+    energyPer100g: energy?.per100g ?? null,
+    units: unitRows.map((u) => ({ id: u.id, name: u.name, grams: u.grams, isDefault: u.isDefault }))
+  };
+}
+
+/** nutrient `key` -> id (catalog is small; built per call). */
+function nutrientKeyToId(): Map<string, number> {
+  return new Map(db.select({ id: nutrients.id, key: nutrients.key }).from(nutrients).all().map((n) => [n.key, n.id]));
+}
+
+/**
+ * Ensure an Open Food Facts product is cached as a shared food (owner NULL,
+ * source 'off', origin_ref = barcode) and return its id. Idempotent. Returns
+ * null if the product can't be fetched.
+ */
+export async function importOffFood(barcode: string): Promise<number | null> {
+  const existing = db
+    .select({ id: foods.id })
+    .from(foods)
+    .where(and(isNull(foods.ownerUserId), eq(foods.source, 'off'), eq(foods.originRef, barcode)))
+    .get();
+  if (existing) return existing.id;
+
+  const p = await openFoodFacts.getByRef(barcode);
+  if (!p) return null;
+
+  const inserted = db
+    .insert(foods)
+    .values({ ownerUserId: null, source: 'off', kind: 'item', originRef: p.ref, name: p.name, brand: p.brand, barcode: p.ref })
+    .returning({ id: foods.id })
+    .get();
+
+  const k2id = nutrientKeyToId();
+  const nutrientValues = Object.entries(p.nutrients)
+    .filter(([k]) => k2id.has(k))
+    .map(([k, v]) => ({ foodId: inserted.id, nutrientId: k2id.get(k)!, per100g: v }));
+  if (nutrientValues.length > 0) db.insert(foodNutrients).values(nutrientValues).run();
+
+  if (p.servingGrams && p.servingGrams > 0) {
+    db.insert(foodUnits).values({ foodId: inserted.id, name: 'serving', grams: p.servingGrams, isDefault: false }).run();
+  }
+  return inserted.id;
+}
+
+/**
+ * Create (or return the existing) per-user local override of an OFF product:
+ * a local food copy the user can edit without affecting the shared cache or
+ * other users. Idempotent per (user, barcode).
+ */
+export async function createOverride(userId: number, barcode: string): Promise<PickerFood | null> {
+  const existing = db
+    .select({ id: foods.id })
+    .from(foods)
+    .where(and(eq(foods.ownerUserId, userId), eq(foods.source, 'local'), eq(foods.originRef, barcode)))
+    .get();
+  if (existing) return pickerFoodById(existing.id);
+
+  const sharedId = await importOffFood(barcode);
+  if (sharedId === null) return null;
+
+  const shared = db.select().from(foods).where(eq(foods.id, sharedId)).get();
+  if (!shared) return null;
+
+  const local = db
+    .insert(foods)
+    .values({ ownerUserId: userId, source: 'local', kind: 'item', originRef: barcode, name: shared.name, brand: shared.brand, barcode: shared.barcode })
+    .returning({ id: foods.id })
+    .get();
+
+  // Clone nutrients + units from the shared cache copy.
+  const srcNutrients = db.select().from(foodNutrients).where(eq(foodNutrients.foodId, sharedId)).all();
+  if (srcNutrients.length > 0) {
+    db.insert(foodNutrients).values(srcNutrients.map((n) => ({ foodId: local.id, nutrientId: n.nutrientId, per100g: n.per100g }))).run();
+  }
+  const srcUnits = db.select().from(foodUnits).where(eq(foodUnits.foodId, sharedId)).all();
+  if (srcUnits.length > 0) {
+    db.insert(foodUnits).values(srcUnits.map((u) => ({ foodId: local.id, name: u.name, grams: u.grams, isDefault: u.isDefault }))).run();
+  }
+  return pickerFoodById(local.id);
 }
 
 /** Full detail for one food owned by the user, or null. */

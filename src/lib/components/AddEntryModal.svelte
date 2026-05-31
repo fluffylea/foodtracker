@@ -48,6 +48,70 @@
     }
   }
 
+  // --- Open Food Facts live search ---
+  type OffResult = { ref: string; name: string; brand: string | null; energyPer100g: number | null };
+  let offResults = $state<OffResult[]>([]);
+  let offLoading = $state(false);
+  let busy = $state(false); // importing a product / creating an override
+
+  // OFF barcodes the user already has a local override for — hide the originals.
+  const localRefs = $derived(new Set(foods.map((f) => f.originRef).filter(Boolean)));
+
+  $effect(() => {
+    const q = query.trim();
+    if (q.length < 2) {
+      offResults = [];
+      offLoading = false;
+      return;
+    }
+    offLoading = true;
+    let activeRun = true;
+    const t = setTimeout(async () => {
+      try {
+        const r = await fetch(`/api/off/search?q=${encodeURIComponent(q)}`);
+        const data: OffResult[] = r.ok ? await r.json() : [];
+        if (activeRun) offResults = data.filter((d) => !localRefs.has(d.ref));
+      } catch {
+        if (activeRun) offResults = [];
+      } finally {
+        if (activeRun) offLoading = false;
+      }
+    }, 350);
+    return () => {
+      activeRun = false;
+      clearTimeout(t);
+    };
+  });
+
+  async function pickOff(r: OffResult) {
+    busy = true;
+    try {
+      const res = await fetch('/api/off/import', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ barcode: r.ref })
+      });
+      if (res.ok) pick(await res.json());
+    } finally {
+      busy = false;
+    }
+  }
+
+  async function customize() {
+    if (!selected || selected.source !== 'off' || !selected.originRef) return;
+    busy = true;
+    try {
+      const res = await fetch('/api/off/override', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ barcode: selected.originRef })
+      });
+      if (res.ok) selected = await res.json();
+    } finally {
+      busy = false;
+    }
+  }
+
   // Live gram + energy preview.
   const grams = $derived.by(() => {
     const a = Number(amount);
@@ -77,11 +141,10 @@
     <div class="mbody">
       {#if !editing}
         <div class="pane left">
-          <input class="search" placeholder="Search my foods…" bind:value={query} />
+          <input class="search" placeholder="Search foods or Open Food Facts…" bind:value={query} />
           <div class="results">
-            {#if shown.length === 0}
-              <div class="noresults">No foods. Create some in the Foods tab.</div>
-            {:else}
+            {#if shown.length > 0}
+              <div class="group-h">My foods</div>
               {#each shown as f (f.id)}
                 <button
                   class="res"
@@ -96,6 +159,25 @@
                   </span>
                 </button>
               {/each}
+            {/if}
+
+            {#if query.trim().length >= 2}
+              <div class="group-h">Open Food Facts{#if offLoading}<span class="dots"> …</span>{/if}</div>
+              {#if offResults.length === 0 && !offLoading}
+                <div class="noresults">No Open Food Facts matches.</div>
+              {:else}
+                {#each offResults as r (r.ref)}
+                  <button class="res" type="button" onclick={() => pickOff(r)} disabled={busy}>
+                    <span class="res-nm">{r.name}{#if r.brand}<em> · {r.brand}</em>{/if}</span>
+                    <span class="res-sub">
+                      <span class="src off">Open Food Facts</span>
+                      {#if r.energyPer100g !== null}· {Math.round(r.energyPer100g)} kcal/100 g{/if}
+                    </span>
+                  </button>
+                {/each}
+              {/if}
+            {:else if shown.length === 0}
+              <div class="noresults">Type to search Open Food Facts, or add foods in the Foods tab.</div>
             {/if}
           </div>
         </div>
@@ -116,6 +198,10 @@
             <div class="detail-h">
               <b>{selected.name}</b>
               {#if selected.brand}<span class="brand">{selected.brand}</span>{/if}
+              <span class="src {selected.source}">{selected.source === 'off' ? 'Open Food Facts' : 'Local'}</span>
+              {#if selected.source === 'off'}
+                <button type="button" class="customize" onclick={customize} disabled={busy}>Customize</button>
+              {/if}
             </div>
 
             <div class="amt-row">
@@ -258,6 +344,40 @@
   }
   .res.sel {
     background: var(--accent-soft);
+  }
+  .res:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+  .group-h {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--faint);
+    font-weight: 600;
+    padding: 8px 4px 4px;
+  }
+  .dots {
+    color: var(--accent-ink);
+  }
+  .customize {
+    margin-left: auto;
+    border: 1px solid var(--line);
+    background: #fff;
+    color: var(--accent-ink);
+    font-size: 11.5px;
+    font-weight: 600;
+    padding: 4px 9px;
+    border-radius: 7px;
+    cursor: pointer;
+  }
+  .customize:hover {
+    background: var(--accent-soft);
+    border-color: var(--accent);
+  }
+  .customize:disabled {
+    opacity: 0.5;
+    cursor: default;
   }
   .res-nm {
     display: block;
