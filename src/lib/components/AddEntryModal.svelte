@@ -141,9 +141,15 @@
     return n.unit === 'kcal' ? String(Math.round(v)) : String(Math.round(v * 10) / 10);
   }
 
+  // The nutrient field being typed in shows the raw keystrokes (so the cursor
+  // isn't clobbered by the recompute); every other field + the amount update
+  // live from it. On blur it snaps back to the normalised scaled value.
+  let editingNid = $state<number | null>(null);
+  let editingText = $state('');
+
   // Edit a nutrient → back-compute the amount so that nutrient hits the value.
   function setFromNutrient(n: Nutrient, valStr: string) {
-    if (!selected) return;
+    if (!selected || valStr.trim() === '') return;
     const per100 = selected.nutrients[n.id];
     if (!per100 || per100 <= 0) return; // can't reverse a zero/missing value
     const val = Number(valStr);
@@ -269,8 +275,16 @@
                         step="any"
                         min="0"
                         inputmode="decimal"
-                        value={scaled(n)}
-                        onchange={(e) => setFromNutrient(n, e.currentTarget.value)}
+                        value={editingNid === n.id ? editingText : scaled(n)}
+                        onfocus={() => {
+                          editingNid = n.id;
+                          editingText = scaled(n);
+                        }}
+                        oninput={(e) => {
+                          editingText = e.currentTarget.value;
+                          setFromNutrient(n, e.currentTarget.value);
+                        }}
+                        onblur={() => (editingNid = null)}
                       />
                       <em>{n.unit}</em>
                     </span>
