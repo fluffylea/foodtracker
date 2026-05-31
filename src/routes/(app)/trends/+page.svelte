@@ -129,7 +129,7 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 13px 20px;
+    padding: 13px var(--gutter);
     border-bottom: 1px solid var(--line);
     background: #fff;
     flex: none;
@@ -188,7 +188,7 @@
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
   }
   .body {
-    padding: 18px 20px;
+    padding: 18px var(--gutter);
   }
   .chips {
     display: flex;

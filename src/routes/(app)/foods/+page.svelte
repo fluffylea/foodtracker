@@ -77,7 +77,7 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 13px 20px;
+    padding: 13px var(--gutter);
     border-bottom: 1px solid var(--line);
     background: #fff;
     flex: none;
@@ -103,7 +103,7 @@
     background: var(--accent-ink);
   }
   .body {
-    padding: 18px 20px;
+    padding: 18px var(--gutter);
   }
   .search {
     width: 100%;

@@ -18,6 +18,11 @@
 
   --radius: 11px;
   --rail-w: 184px;
+
+  /* Centered content column. --gutter is the horizontal padding that keeps
+     content within --content-max while letting bars span full width. */
+  --content-max: 880px;
+  --gutter: max(20px, calc((100% - var(--content-max)) / 2));
 }
 
 * {

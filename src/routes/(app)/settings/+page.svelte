@@ -109,11 +109,10 @@
 
 <style>
   .body {
-    padding: 18px 20px;
+    padding: 18px var(--gutter);
     display: flex;
     flex-direction: column;
     gap: 16px;
-    max-width: 680px;
   }
   .block {
     padding: 16px 18px;

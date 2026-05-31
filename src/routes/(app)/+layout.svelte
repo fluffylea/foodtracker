@@ -42,9 +42,7 @@
     </div>
   </nav>
   <main class="main">
-    <div class="page">
-      {@render children()}
-    </div>
+    {@render children()}
   </main>
 </div>
 
@@ -177,11 +175,5 @@
     display: flex;
     flex-direction: column;
     overflow: auto;
-  }
-  /* Centered content column so pages don't sprawl on very wide windows. */
-  .page {
-    width: 100%;
-    max-width: 880px;
-    margin: 0 auto;
   }
 </style>
