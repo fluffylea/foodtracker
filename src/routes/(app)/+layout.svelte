@@ -1,5 +1,6 @@
 <script lang="ts">
   import { page } from '$app/stores';
+  import Icon from '$lib/components/Icon.svelte';
 
   let { children, data } = $props();
 
@@ -27,7 +28,7 @@
     </div>
     {#each tabs as tab (tab.id)}
       <a class="tab" class:on={active === tab.id} href={tab.href}>
-        <span class="ic"></span>{tab.label}
+        <span class="ic"><Icon name={tab.id} /></span>{tab.label}
       </a>
     {/each}
     <div class="railftr">
@@ -88,12 +89,9 @@
     color: var(--muted);
   }
   .tab .ic {
-    width: 15px;
-    height: 15px;
-    border: 1.5px solid currentColor;
-    border-radius: 5px;
-    opacity: 0.6;
+    display: inline-flex;
     flex: none;
+    opacity: 0.75;
   }
   .tab.on {
     background: var(--accent-soft);
