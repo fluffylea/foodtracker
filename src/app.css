@@ -60,6 +60,20 @@ button {
   font: inherit;
 }
 
+@media (max-width: 768px) {
+  /* iOS zooms the page when focusing an input with font-size < 16px. */
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+  /* Extend the white page header into the notch / status-bar safe area so it
+     fills the top edge instead of leaving a strip. env() adapts per device. */
+  .top {
+    padding-top: calc(13px + env(safe-area-inset-top)) !important;
+  }
+}
+
 /* Generic helpers reused across views. */
 .muted {
   color: var(--muted);

@@ -189,7 +189,7 @@
       <button class="x" onclick={onclose} aria-label="Close">✕</button>
     </div>
 
-    <div class="mbody">
+    <div class="mbody" class:has-selection={selected !== null}>
       {#if !editing}
         <div class="pane left">
           <input class="search" placeholder="Search foods or Open Food Facts…" bind:value={query} />
@@ -248,6 +248,9 @@
             {#if editing}<input type="hidden" name="id" value={editing.id} />{/if}
 
             <div class="detail-h">
+              {#if !editing}
+                <button class="back" type="button" onclick={() => (selected = null)} aria-label="Back to search">‹</button>
+              {/if}
               <b>{selected.name}</b>
               {#if selected.brand}<span class="brand">{selected.brand}</span>{/if}
               <span class="src {selected.source}">{selected.source === 'off' ? 'Open Food Facts' : 'Local'}</span>
@@ -410,10 +413,27 @@
     margin-bottom: 10px;
   }
   .results {
+    flex: 1;
+    min-height: 0;
     overflow: auto;
     display: flex;
     flex-direction: column;
     gap: 2px;
+  }
+  .back {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    margin-right: 2px;
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    background: #fff;
+    color: var(--muted);
+    font-size: 16px;
+    cursor: pointer;
+    flex: none;
   }
   .noresults {
     color: var(--faint);
@@ -632,7 +652,8 @@
     min-height: 140px;
   }
 
-  /* Mobile: full-width bottom sheet; the two panes stack. */
+  /* Mobile: full-height bottom sheet, one step at a time — search the list,
+     then the detail/customize screen (with a back button). */
   @media (max-width: 560px) {
     .backdrop {
       padding: 0;
@@ -640,21 +661,32 @@
     }
     .modal {
       max-width: none;
+      height: 92dvh;
       max-height: 92dvh;
       border-radius: 16px 16px 0 0;
     }
     .mbody {
       flex-direction: column;
     }
+    .mbody:not(.has-selection) .right {
+      display: none;
+    }
+    .mbody.has-selection .left {
+      display: none;
+    }
     .left {
       width: auto;
       border-right: none;
-      border-bottom: 1px solid var(--line);
-      max-height: 38vh;
+      flex: 1;
+      min-height: 0;
     }
     .right {
+      flex: 1;
       overflow: auto;
       padding-bottom: max(14px, env(safe-area-inset-bottom));
+    }
+    .back {
+      display: inline-flex;
     }
   }
 </style>
