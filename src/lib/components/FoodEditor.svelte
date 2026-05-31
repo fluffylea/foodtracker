@@ -39,6 +39,9 @@
   // Which row is the default unit: a named-unit index, or 'base' (grams).
   let defaultSel = $state<number | 'base'>(initial.defaultSel);
 
+  let justSaved = $state(false);
+  let confirmingDelete = $state(false);
+
   function addUnit() {
     units.push({ name: '', grams: '' });
   }
@@ -65,7 +68,22 @@
   );
 </script>
 
-<form method="POST" action="?/save" use:enhance class="editor">
+<form
+  method="POST"
+  action="?/save"
+  class="editor"
+  use:enhance={() => {
+    return async ({ result, update }) => {
+      // Don't reset the form on success — inputs are bound to component
+      // state; a native reset would blank the visible fields out of sync.
+      await update({ reset: false });
+      if (result.type === 'success') {
+        justSaved = true;
+        setTimeout(() => (justSaved = false), 2000);
+      }
+    };
+  }}
+>
   <input type="hidden" name="data" value={payload} />
   {#if food}<input type="hidden" name="id" value={food.id} />{/if}
 
@@ -121,11 +139,28 @@
 
   <div class="efoot">
     {#if food}
-      <button type="submit" formaction="?/delete" class="ghost danger" formnovalidate>Delete</button>
+      <button
+        type="submit"
+        formaction="?/delete"
+        class="ghost danger"
+        class:confirming={confirmingDelete}
+        formnovalidate
+        onclick={(e) => {
+          if (!confirmingDelete) {
+            e.preventDefault();
+            confirmingDelete = true;
+          }
+        }}
+      >
+        {confirmingDelete ? 'Click again to delete' : 'Delete'}
+      </button>
     {:else}
       <span></span>
     {/if}
-    <button type="submit" class="cta">{food ? 'Save food' : 'Create food'}</button>
+    <div class="efoot-r">
+      {#if justSaved}<span class="saved">Saved ✓</span>{/if}
+      <button type="submit" class="cta">{food ? 'Save food' : 'Create food'}</button>
+    </div>
   </div>
 </form>
 
@@ -343,6 +378,22 @@
   .ghost.danger:hover {
     color: var(--over);
     border-color: #ecc6b8;
+  }
+  .ghost.danger.confirming {
+    background: #fdece5;
+    border-color: var(--over);
+    color: #b4502d;
+    font-weight: 600;
+  }
+  .efoot-r {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .saved {
+    font-size: 12.5px;
+    color: var(--good);
+    font-weight: 600;
   }
   .cta {
     background: var(--accent);

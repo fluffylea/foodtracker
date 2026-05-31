@@ -12,7 +12,7 @@ export const DEFAULT_NUTRIENTS: { key: string; name: string; unit: string }[] = 
   { key: 'fat', name: 'Fat', unit: 'g' },
   { key: 'saturates', name: 'Saturated fat', unit: 'g' },
   { key: 'fiber', name: 'Fiber', unit: 'g' },
-  { key: 'sodium', name: 'Sodium', unit: 'mg' },
+  // Salt (EU label convention). Salt = sodium × 2.5; we track one, not both.
   { key: 'salt', name: 'Salt', unit: 'g' }
 ];
 
