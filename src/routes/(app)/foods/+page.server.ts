@@ -77,10 +77,11 @@ export const actions: Actions = {
       const id = Number(idRaw);
       const ok = updateFood(userId, id, result.input);
       if (!ok) return fail(404, { error: 'Food not found.' });
-      return { saved: true };
+    } else {
+      createFood(userId, result.input);
     }
-    const newId = createFood(userId, result.input);
-    redirect(303, `/foods?id=${newId}`);
+    // Close the edit modal by returning to the plain list.
+    redirect(303, '/foods');
   },
 
   delete: async ({ request, locals }) => {

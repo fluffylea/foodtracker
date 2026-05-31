@@ -4,20 +4,20 @@
 
   let { children, data } = $props();
 
+  // Content tabs only — account + settings live in the bottom chip.
   const tabs = [
     { id: 'today', label: 'Today', href: '/diary/today' },
     { id: 'trends', label: 'Trends', href: '/trends' },
-    { id: 'foods', label: 'Foods', href: '/foods' },
-    { id: 'settings', label: 'Settings', href: '/settings' }
+    { id: 'foods', label: 'Foods', href: '/foods' }
   ];
 
-  // Active tab from the current path: /diary/* → today, else first segment.
   const active = $derived.by(() => {
     const p = $page.url.pathname;
     if (p.startsWith('/diary')) return 'today';
     const seg = p.split('/')[1];
-    return tabs.some((t) => t.id === seg) ? seg : 'today';
+    return tabs.some((t) => t.id === seg) ? seg : '';
   });
+  const onSettings = $derived($page.url.pathname.startsWith('/settings'));
 </script>
 
 <div class="shell">
@@ -31,16 +31,20 @@
         <span class="ic"><Icon name={tab.id} /></span>{tab.label}
       </a>
     {/each}
-    <div class="railftr">
-      <span class="ava">{data.user.name.slice(0, 1).toUpperCase()}</span>
-      <span class="railftr-t" title={data.user.email}>{data.user.name}</span>
+    <div class="railftr" class:on={onSettings}>
+      <a class="acct-ic" href="/settings" title="Account &amp; settings" aria-label="Account &amp; settings">
+        <Icon name="settings" size={18} />
+      </a>
+      <a class="acct-name" href="/settings" title={data.user.email}>{data.user.name}</a>
       <form method="POST" action="/logout">
         <button class="logout" type="submit" title="Log out" aria-label="Log out">⏻</button>
       </form>
     </div>
   </nav>
   <main class="main">
-    {@render children()}
+    <div class="page">
+      {@render children()}
+    </div>
   </main>
 </div>
 
@@ -108,30 +112,42 @@
     margin-top: auto;
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 9px 6px 2px;
+    gap: 4px;
+    padding-top: 6px;
     border-top: 1px solid var(--line2);
   }
-  .ava {
-    width: 22px;
-    height: 22px;
-    border-radius: 50%;
-    background: var(--accent-soft);
-    color: var(--accent-ink);
+  /* Account chip → Settings: icon left, name centred, logout right. */
+  .acct-ic {
     flex: none;
-    display: grid;
-    place-items: center;
-    font-size: 11px;
-    font-weight: 600;
-  }
-  .railftr-t {
-    font-size: 11.5px;
+    display: inline-flex;
+    padding: 7px;
+    border-radius: 8px;
     color: var(--muted);
+    opacity: 0.8;
+  }
+  .acct-ic:hover {
+    background: var(--fill);
+    opacity: 1;
+  }
+  .acct-name {
     flex: 1;
     min-width: 0;
+    text-align: center;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    font-size: 13px;
+    color: var(--muted);
+    padding: 0 4px;
+  }
+  .acct-name:hover {
+    color: var(--ink);
+  }
+  .railftr.on .acct-ic,
+  .railftr.on .acct-name {
+    color: var(--accent-ink);
+    opacity: 1;
+    font-weight: 600;
   }
   .railftr form {
     display: flex;
@@ -161,5 +177,11 @@
     display: flex;
     flex-direction: column;
     overflow: auto;
+  }
+  /* Centered content column so pages don't sprawl on very wide windows. */
+  .page {
+    width: 100%;
+    max-width: 880px;
+    margin: 0 auto;
   }
 </style>

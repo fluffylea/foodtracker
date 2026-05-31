@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { goto } from '$app/navigation';
   import FoodEditor from '$lib/components/FoodEditor.svelte';
 
   let { data, form } = $props();
@@ -8,15 +9,20 @@
     data.foods.filter((f) => {
       const q = filter.trim().toLowerCase();
       if (!q) return true;
-      return f.name.toLowerCase().includes(q) || (f.brand ?? '').toLowerCase().includes(q);
+      return (
+        f.name.toLowerCase().includes(q) ||
+        (f.brand ?? '').toLowerCase().includes(q) ||
+        (f.barcode ?? '').includes(q)
+      );
     })
   );
 
-  const selectedId = $derived(data.selected?.id ?? null);
-  // Remount the editor when the selection (or new-food intent) changes.
-  const editorKey = $derived(data.isNew ? 'new' : (selectedId ?? 'none'));
   const showEditor = $derived(data.isNew || data.selected !== null);
+  const editorKey = $derived(data.isNew ? 'new' : (data.selected?.id ?? 'none'));
 
+  function close() {
+    goto('/foods');
+  }
   function fmtEnergy(v: number | null): string {
     return v === null ? '—' : `${Math.round(v)} kcal`;
   }
@@ -32,41 +38,39 @@
   <a class="btn" href="/foods?new=1">+ New food</a>
 </header>
 
-<div class="split">
-  <div class="list-col">
-    <input class="search" placeholder="Filter my foods…" bind:value={filter} />
-    {#if shown.length === 0}
-      <div class="empty-list">
-        {data.foods.length === 0 ? 'No foods yet — create one →' : 'No matches.'}
-      </div>
-    {:else}
-      <div class="flist">
-        {#each shown as f (f.id)}
-          <a class="frow" class:sel={f.id === selectedId} href="/foods?id={f.id}">
-            <span class="fnm">{f.name}{#if f.brand}<em> · {f.brand}</em>{/if}</span>
-            <span class="tag {f.source === 'off' ? 'ov' : 'cu'}">{f.source === 'off' ? 'Override' : 'Custom'}</span>
-            <span class="fk">{fmtEnergy(f.energyPer100g)}</span>
-            <span class="fu">{['g', ...f.unitNames].join(' · ')}</span>
-          </a>
-        {/each}
-      </div>
-    {/if}
-  </div>
-
-  <div class="edit-col">
-    {#if showEditor}
-      {#key editorKey}
-        <div class="card editor-card">
-          <FoodEditor food={data.selected} catalog={data.catalog} error={form?.error} />
-        </div>
-      {/key}
-    {:else}
-      <div class="card empty-edit">
-        <p>Select a food to edit, or <a href="/foods?new=1">create a new one</a>.</p>
-      </div>
-    {/if}
-  </div>
+<div class="body">
+  <input class="search" placeholder="Filter my foods…" bind:value={filter} />
+  {#if shown.length === 0}
+    <div class="empty-list">
+      {data.foods.length === 0 ? 'No foods yet — create one →' : 'No matches.'}
+    </div>
+  {:else}
+    <div class="flist">
+      {#each shown as f (f.id)}
+        <a class="frow" href="/foods?id={f.id}">
+          <span class="fnm">{f.name}{#if f.brand}<em> · {f.brand}</em>{/if}</span>
+          <span class="tag {f.source === 'off' ? 'ov' : 'cu'}">{f.source === 'off' ? 'Override' : 'Custom'}</span>
+          <span class="fk">{fmtEnergy(f.energyPer100g)}</span>
+          <span class="fu">{['g', ...f.unitNames].join(' · ')}</span>
+        </a>
+      {/each}
+    </div>
+  {/if}
 </div>
+
+{#if showEditor}
+  <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+  <div class="backdrop" onclick={close}>
+    <div class="modal" onclick={(e) => e.stopPropagation()}>
+      <button class="modal-x" type="button" onclick={close} aria-label="Close">✕</button>
+      <div class="modal-scroll">
+        {#key editorKey}
+          <FoodEditor food={data.selected} catalog={data.catalog} error={form?.error} />
+        {/key}
+      </div>
+    </div>
+  </div>
+{/if}
 
 <style>
   .top {
@@ -98,19 +102,8 @@
   .btn:hover {
     background: var(--accent-ink);
   }
-  .split {
-    display: flex;
-    gap: 16px;
+  .body {
     padding: 18px 20px;
-    align-items: flex-start;
-  }
-  .list-col {
-    flex: 1;
-    min-width: 0;
-  }
-  .edit-col {
-    width: 380px;
-    flex: none;
   }
   .search {
     width: 100%;
@@ -133,17 +126,14 @@
     grid-template-areas: 'nm tag k' 'u u u';
     gap: 2px 10px;
     align-items: center;
-    padding: 10px 14px;
+    padding: 11px 14px;
     border-bottom: 1px solid var(--line2);
     color: var(--ink);
   }
   .frow:last-child {
     border-bottom: none;
   }
-  .frow.sel {
-    background: var(--accent-soft);
-  }
-  .frow:hover:not(.sel) {
+  .frow:hover {
     background: var(--panel);
   }
   .fnm {
@@ -190,13 +180,46 @@
     color: var(--faint);
     font-size: 13px;
   }
-  .editor-card {
-    padding: 16px 18px;
+
+  /* Edit modal */
+  .backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    background: rgba(40, 34, 28, 0.4);
+    display: grid;
+    place-items: center;
+    padding: 24px;
   }
-  .empty-edit {
-    padding: 28px 20px;
-    text-align: center;
-    color: var(--muted);
-    font-size: 13px;
+  .modal {
+    position: relative;
+    width: 100%;
+    max-width: 520px;
+    max-height: 85vh;
+    background: #fff;
+    border-radius: 14px;
+    box-shadow: 0 24px 60px rgba(70, 60, 45, 0.22);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  .modal-x {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    z-index: 1;
+    border: none;
+    background: transparent;
+    color: var(--faint);
+    cursor: pointer;
+    font-size: 14px;
+    padding: 4px;
+  }
+  .modal-x:hover {
+    color: var(--ink);
+  }
+  .modal-scroll {
+    overflow: auto;
+    padding: 16px 18px;
   }
 </style>

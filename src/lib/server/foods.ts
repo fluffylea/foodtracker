@@ -7,6 +7,7 @@ export type FoodListItem = {
   id: number;
   name: string;
   brand: string | null;
+  barcode: string | null;
   source: 'off' | 'local';
   kind: 'item' | 'recipe';
   energyPer100g: number | null;
@@ -79,6 +80,7 @@ export function listFoods(userId: number): FoodListItem[] {
     id: r.id,
     name: r.name,
     brand: r.brand,
+    barcode: r.barcode,
     source: r.source,
     kind: r.kind,
     energyPer100g: energyByFood.get(r.id) ?? null,
