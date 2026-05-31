@@ -84,6 +84,17 @@
     return unit === 'kcal' ? Math.round(v).toLocaleString() : String(Math.round(v * 10) / 10);
   }
 
+  // Lone points (a metric with a single real value) — rendered as HTML dots so
+  // they stay circular (an SVG <circle> would squash under the non-uniform scale).
+  const loneDots = $derived(
+    lines
+      .map((l) => {
+        const dot = shape(l).dot;
+        return dot ? { x: dot.x, y: dot.y, color: l.color } : null;
+      })
+      .filter((d): d is { x: number; y: number; color: string } => d !== null)
+  );
+
   const hoverX = $derived(hover === null ? 0 : xAt(hover));
   // Flip the tooltip to the left of the cursor once past ~60% width.
   const tipRight = $derived(hoverX > 60);
@@ -111,12 +122,15 @@
         {@const s = shape(l)}
         {#each s.solid as g}<line class="seg" x1={g.x1} y1={g.y1} x2={g.x2} y2={g.y2} style="stroke: {l.color}" />{/each}
         {#each s.dashed as g}<line class="seg gap" x1={g.x1} y1={g.y1} x2={g.x2} y2={g.y2} style="stroke: {l.color}" />{/each}
-        {#if s.dot}<circle class="lonedot" cx={s.dot.x} cy={s.dot.y} r="2.5" style="fill: {l.color}" />{/if}
       {/each}
       {#if hover !== null && lines.length > 0}
         <line class="cursor" x1={hoverX} x2={hoverX} y1="0" y2="100" />
       {/if}
     </svg>
+
+    {#each loneDots as d}
+      <span class="lonedot" style="left: {d.x}%; top: {d.y}%; background: {d.color}"></span>
+    {/each}
 
     {#if hover !== null && lines.length > 0}
       <div class="tip" class:right={tipRight} style="left: {hoverX}%">
@@ -209,9 +223,13 @@
     opacity: 0.55;
   }
   .lonedot {
-    stroke: #fff;
-    stroke-width: 1.5;
-    vector-effect: non-scaling-stroke;
+    position: absolute;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    border: 1.5px solid #fff;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
   }
   .cursor {
     stroke: var(--muted);
