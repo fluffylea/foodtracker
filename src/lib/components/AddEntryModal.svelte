@@ -147,8 +147,12 @@
     return a * curUnitGrams;
   });
 
-  // Catalog nutrients this food has a value for (the scaled breakdown rows).
-  const breakdown = $derived(catalog.filter((n) => selected && selected.nutrients[n.id] !== undefined));
+  // Show the full catalog (uniform grid); nutrients the food has no value for
+  // render as disabled "—" fields.
+  const breakdown = $derived(selected ? catalog : []);
+  function hasValue(n: Nutrient): boolean {
+    return !!selected && selected.nutrients[n.id] !== undefined;
+  }
 
   function scaled(n: Nutrient): string {
     if (!selected) return '';
@@ -299,15 +303,18 @@
             {#if breakdown.length > 0}
               <div class="breakdown">
                 {#each breakdown as n (n.id)}
+                  {@const known = hasValue(n)}
                   <label class="nrow">
                     <span class="nlabel">{n.name}</span>
-                    <span class="nb">
+                    <span class="nb" class:empty={!known}>
                       <input
                         type="number"
                         step="any"
                         min="0"
                         inputmode="decimal"
-                        value={editingNid === n.id ? editingText : scaled(n)}
+                        disabled={!known}
+                        placeholder="—"
+                        value={known ? (editingNid === n.id ? editingText : scaled(n)) : ''}
                         onfocus={() => {
                           editingNid = n.id;
                           editingText = scaled(n);
@@ -587,6 +594,14 @@
     border-radius: 8px;
     background: #fff;
     padding: 0 9px;
+  }
+  .nb.empty {
+    background: var(--panel);
+  }
+  .nb input:disabled {
+    color: var(--faint);
+    -webkit-text-fill-color: var(--faint);
+    opacity: 1;
   }
   .nb input {
     border: none;

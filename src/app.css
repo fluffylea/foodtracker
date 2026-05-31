@@ -36,7 +36,9 @@ body {
 }
 
 body {
-  background: var(--bg);
+  /* white (not the cream --bg) so the top/bottom safe areas match the white
+     header/bottom-bar instead of leaving a coloured strip under the notch */
+  background: #fff;
   color: var(--ink);
   font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
