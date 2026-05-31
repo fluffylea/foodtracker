@@ -1,4 +1,4 @@
-import { and, eq, inArray, asc } from 'drizzle-orm';
+import { and, or, eq, isNull, inArray, asc } from 'drizzle-orm';
 import { db } from './db/index';
 import { foods, foodNutrients, foodUnits, nutrients } from './db/schema';
 
@@ -80,6 +80,61 @@ export function listFoods(userId: number): FoodListItem[] {
     kind: r.kind,
     energyPer100g: energyByFood.get(r.id) ?? null,
     unitNames: unitsByFood.get(r.id) ?? []
+  }));
+}
+
+export type PickerFood = {
+  id: number;
+  name: string;
+  brand: string | null;
+  source: 'off' | 'local';
+  energyPer100g: number | null;
+  units: { id: number; name: string; grams: number; isDefault: boolean }[];
+};
+
+/**
+ * Compact list for the add-food picker: each food with its units (id+grams,
+ * for the unit dropdown and gram math) and energy (for a kcal preview).
+ * Includes the user's local foods and shared cache foods (owner = NULL).
+ */
+export function listFoodsForPicker(userId: number): PickerFood[] {
+  const rows = db
+    .select()
+    .from(foods)
+    .where(or(eq(foods.ownerUserId, userId), isNull(foods.ownerUserId)))
+    .orderBy(asc(foods.name))
+    .all();
+  if (rows.length === 0) return [];
+
+  const ids = rows.map((r) => r.id);
+  const energy = db
+    .select({ foodId: foodNutrients.foodId, per100g: foodNutrients.per100g })
+    .from(foodNutrients)
+    .innerJoin(nutrients, eq(foodNutrients.nutrientId, nutrients.id))
+    .where(and(inArray(foodNutrients.foodId, ids), eq(nutrients.key, 'energy')))
+    .all();
+  const energyByFood = new Map(energy.map((e) => [e.foodId, e.per100g]));
+
+  const unitRows = db
+    .select()
+    .from(foodUnits)
+    .where(inArray(foodUnits.foodId, ids))
+    .orderBy(asc(foodUnits.id))
+    .all();
+  const unitsByFood = new Map<number, PickerFood['units']>();
+  for (const u of unitRows) {
+    const list = unitsByFood.get(u.foodId) ?? [];
+    list.push({ id: u.id, name: u.name, grams: u.grams, isDefault: u.isDefault });
+    unitsByFood.set(u.foodId, list);
+  }
+
+  return rows.map((r) => ({
+    id: r.id,
+    name: r.name,
+    brand: r.brand,
+    source: r.source,
+    energyPer100g: energyByFood.get(r.id) ?? null,
+    units: unitsByFood.get(r.id) ?? []
   }));
 }
 

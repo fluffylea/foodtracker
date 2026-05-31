@@ -3,10 +3,11 @@
 A self-hosted calorie & nutrition tracker for 1–12 trusted users.
 See [DESIGN.md](DESIGN.md) for the full design and roadmap.
 
-> **Status:** milestone 2 — auth. App shell (Today / Trends / Foods / Settings tabs),
-> day navigation, and the full database schema (milestone 1) plus session-cookie login,
-> a route guard, logout, and admin user management (milestone 2) are in place.
-> Foods, diary, goals, OFF integration and graphs follow in later milestones.
+> **Status:** milestone 4 — diary core. Done so far: scaffold + schema (m1),
+> session-cookie auth + admin user management (m2), the local-food layer with a
+> named-units editor (m3), and diary logging — add/edit/remove entries with
+> amount + unit, unit→grams math, and per-day nutrient totals on the Today view (m4).
+> Goals, Open Food Facts integration, meal groups and graphs follow next.
 
 ## Stack
 
