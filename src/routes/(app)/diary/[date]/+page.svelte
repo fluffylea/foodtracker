@@ -37,7 +37,6 @@
     </div>
     <a class="arw" href="/diary/{data.next}" aria-label="Next day">›</a>
   </div>
-  <button class="btn" onclick={openAdd}>+ Add food</button>
 </header>
 
 <div class="body">
@@ -57,10 +56,7 @@
   </div>
 
   {#if data.entries.length === 0}
-    <div class="empty">
-      <p>No food logged for this day.</p>
-      <button class="btn" onclick={openAdd}>+ Add food</button>
-    </div>
+    <p class="empty">No food logged for this day.</p>
   {:else}
     <div class="log">
       {#each data.entries as e (e.id)}
@@ -72,6 +68,8 @@
       {/each}
     </div>
   {/if}
+
+  <button class="add-row" type="button" onclick={openAdd}>+ Add food</button>
 </div>
 
 {#if modal}
@@ -116,19 +114,6 @@
     font-size: 11px;
     color: var(--faint);
     margin-top: 1px;
-  }
-  .btn {
-    background: var(--accent);
-    color: #fff;
-    font-weight: 600;
-    font-size: 13px;
-    padding: 8px 14px;
-    border-radius: 9px;
-    border: none;
-    cursor: pointer;
-  }
-  .btn:hover {
-    background: var(--accent-ink);
   }
   .body {
     padding: 18px 20px;
@@ -230,14 +215,27 @@
     font-variant-numeric: tabular-nums;
   }
   .empty {
-    border: 1px dashed var(--line);
-    border-radius: 12px;
-    padding: 28px;
+    margin: 0;
+    padding: 14px 0 0;
     text-align: center;
-    color: var(--muted);
-  }
-  .empty p {
-    margin: 0 0 12px;
+    color: var(--faint);
     font-size: 13px;
+  }
+  .add-row {
+    width: 100%;
+    margin-top: 10px;
+    border: 1px dashed var(--line);
+    border-radius: 10px;
+    padding: 12px;
+    text-align: center;
+    background: transparent;
+    color: var(--accent-ink);
+    font-weight: 600;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  .add-row:hover {
+    background: var(--accent-soft);
+    border-color: var(--accent);
   }
 </style>
