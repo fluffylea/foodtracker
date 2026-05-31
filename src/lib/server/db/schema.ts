@@ -128,7 +128,13 @@ export const mealGroups = sqliteTable(
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
     name: text('name').notNull(),
-    sortOrder: integer('sort_order').notNull().default(0)
+    sortOrder: integer('sort_order').notNull().default(0),
+    // Effective-dated existence (like goals): a meal is shown for day D when
+    // effective_from <= D < (removed_from ?? ∞). Soft-removed, never hard
+    // deleted, so past days keep the meal and its entries. Default backdates
+    // existing meals so they stay visible everywhere.
+    effectiveFrom: text('effective_from').notNull().default('2000-01-01'),
+    removedFrom: text('removed_from')
   },
   (t) => ({
     userIdx: index('meal_groups_user_idx').on(t.userId)

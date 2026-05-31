@@ -8,8 +8,10 @@ See [DESIGN.md](DESIGN.md) for the full design and roadmap.
 > named-units editor (m3), diary logging with unit→grams math and per-day totals (m4),
 > effective-dated goals with per-card editing (m5), Open Food Facts search +
 > import-to-shared-cache + per-user "customize" overrides (m6), and user-defined
-> meal groups — the diary log groups entries by meal with per-meal subtotals,
-> drag-reorder, and an Unsorted catch-all (m7). Graphs follow next.
+> effective-dated meal groups — the diary log shows entries under lightweight
+> per-meal sections with subtotals; meals are added/removed effective today (past
+> days keep theirs, like goals), with a default "Log" bucket and today-only
+> management (m7). Graphs follow next.
 
 ## Stack
 

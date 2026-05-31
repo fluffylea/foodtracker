@@ -7,7 +7,7 @@ import {
   listMealGroups,
   createMealGroup,
   renameMealGroup,
-  deleteMealGroup,
+  removeMealGroup,
   reorderMealGroups
 } from '$lib/server/mealgroups';
 import type { Actions, PageServerLoad } from './$types';
@@ -34,7 +34,7 @@ export const load: PageServerLoad = ({ params, locals }) => {
     catalog: nutrientCatalog(),
     foods: listFoodsForPicker(user.id),
     goals: getVisibleGoals(user.id, date),
-    mealGroups: listMealGroups(user.id)
+    mealGroups: listMealGroups(user.id, date)
   };
 };
 
@@ -147,9 +147,11 @@ export const actions: Actions = {
   // --- Meal groups ---
 
   createMeal: async ({ request, locals }) => {
+    const user = locals.user!;
+    const today = todayInTz(user.timezone);
     const name = String((await request.formData()).get('name') ?? '').trim();
     if (!name) return fail(400, { error: 'Meal needs a name.' });
-    const id = createMealGroup(locals.user!.id, name);
+    const id = createMealGroup(user.id, name, today);
     if (id === null) return fail(400, { error: 'Could not create meal.' });
     return { mealCreated: id };
   },
@@ -163,11 +165,13 @@ export const actions: Actions = {
     return { mealRenamed: true };
   },
 
-  deleteMeal: async ({ request, locals }) => {
+  removeMeal: async ({ request, locals }) => {
+    const user = locals.user!;
+    const today = todayInTz(user.timezone);
     const id = Number((await request.formData()).get('id'));
     if (!Number.isInteger(id)) return fail(400, { error: 'Invalid meal.' });
-    deleteMealGroup(locals.user!.id, id);
-    return { mealDeleted: true };
+    removeMealGroup(user.id, id, today);
+    return { mealRemoved: true };
   },
 
   reorderMeals: async ({ request, locals }) => {

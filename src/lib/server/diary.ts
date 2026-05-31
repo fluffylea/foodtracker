@@ -1,7 +1,7 @@
 import { and, eq, inArray, asc } from 'drizzle-orm';
 import { db } from './db/index';
 import { foods, foodNutrients, foodUnits, diaryEntries, nutrients } from './db/schema';
-import { mealGroupOwned } from './mealgroups';
+import { mealGroupVisibleOn } from './mealgroups';
 
 export type DiaryEntryView = {
   id: number;
@@ -131,9 +131,9 @@ function foodLoggable(userId: number, foodId: number): boolean {
 
 export type EntryInput = { foodId: number; amount: number; unitId: number | null };
 
-/** null meal group is fine; otherwise it must belong to the user. */
-function mealGroupValid(userId: number, mealGroupId: number | null): boolean {
-  return mealGroupId === null || mealGroupOwned(userId, mealGroupId);
+/** null meal group is fine; otherwise it must be visible on that day. */
+function mealGroupValid(userId: number, mealGroupId: number | null, date: string): boolean {
+  return mealGroupId === null || mealGroupVisibleOn(userId, mealGroupId, date);
 }
 
 /** Add a diary entry. Returns the new id, or null on validation failure. */
@@ -147,7 +147,7 @@ export function addEntry(
   if (!foodLoggable(userId, input.foodId)) return null;
   const { ok } = unitGramsForFood(input.foodId, input.unitId);
   if (!ok) return null;
-  if (!mealGroupValid(userId, mealGroupId)) return null;
+  if (!mealGroupValid(userId, mealGroupId, date)) return null;
 
   const inserted = db
     .insert(diaryEntries)
@@ -173,7 +173,7 @@ export function updateEntry(
   mealGroupId: number | null
 ): boolean {
   const entry = db
-    .select({ foodId: diaryEntries.foodId })
+    .select({ foodId: diaryEntries.foodId, date: diaryEntries.date })
     .from(diaryEntries)
     .where(and(eq(diaryEntries.id, id), eq(diaryEntries.userId, userId)))
     .get();
@@ -181,7 +181,7 @@ export function updateEntry(
   if (!(amount > 0)) return false;
   const { ok } = unitGramsForFood(entry.foodId, unitId);
   if (!ok) return false;
-  if (!mealGroupValid(userId, mealGroupId)) return false;
+  if (!mealGroupValid(userId, mealGroupId, entry.date)) return false;
 
   db.update(diaryEntries).set({ amount, unitId, mealGroupId }).where(eq(diaryEntries.id, id)).run();
   return true;

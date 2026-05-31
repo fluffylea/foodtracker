@@ -123,11 +123,6 @@
     await fetch('?/reorderGoals', { method: 'POST', body, headers: { 'x-sveltekit-action': 'true' } });
     await invalidateAll();
   }
-
-  const totalEnergy = $derived.by(() => {
-    const e = data.catalog.find((n) => n.unit === 'kcal');
-    return e ? (data.totals[e.id] ?? 0) : 0;
-  });
 </script>
 
 <svelte:head><title>Plate · {data.label}</title></svelte:head>
@@ -193,38 +188,32 @@
     </button>
   {/snippet}
 
-  <div class="sec-h mt">
-    <span>Log</span>
-    <span class="mut">{Math.round(totalEnergy).toLocaleString()} kcal · {data.entries.length} item{data.entries.length === 1 ? '' : 's'}</span>
-  </div>
-
-  {#if data.mealGroups.length === 0}
-    <!-- No meals defined → flat list. -->
-    {#if data.entries.length === 0}
-      <p class="empty">No food logged for this day.</p>
-    {:else}
+  {#snippet logBody(entries: typeof data.entries, mealId: number | null)}
+    {#if entries.length > 0}
       <div class="log">
-        {#each data.entries as e (e.id)}{@render entryRow(e)}{/each}
+        {#each entries as e (e.id)}{@render entryRow(e)}{/each}
       </div>
     {/if}
-    <button class="add-row" type="button" onclick={() => openAdd(null)}>+ Add food</button>
-  {:else}
-    <!-- Grouped by user-defined meals. -->
-    {#each mealOrder as mid (mid)}
-      {@const meal = mealById.get(mid)}
-      {#if meal}
-        {@const es = entriesFor(mid)}
-        <!-- svelte-ignore a11y_no_static_element_interactions -->
-        <div
-          class="meal"
-          role="group"
-          draggable="true"
-          ondragstart={() => onMealDragStart(mealOrder.indexOf(mid))}
-          ondragover={(e) => onMealDragOver(mealOrder.indexOf(mid), e)}
-          ondragend={onMealDragEnd}
-        >
-          <div class="meal-h">
-            <span class="grip" title="Drag to reorder">⠿</span>
+    <button class="add-row" type="button" onclick={() => openAdd(mealId)}>+ Add food</button>
+  {/snippet}
+
+  <!-- Named meals (effective-dated; only today's are editable). -->
+  {#each mealOrder as mid (mid)}
+    {@const meal = mealById.get(mid)}
+    {#if meal}
+      {@const es = entriesFor(mid)}
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <section
+        class="meal-sec"
+        class:draggable={isToday}
+        draggable={isToday}
+        ondragstart={() => isToday && onMealDragStart(mealOrder.indexOf(mid))}
+        ondragover={(e) => isToday && onMealDragOver(mealOrder.indexOf(mid), e)}
+        ondragend={() => isToday && onMealDragEnd()}
+      >
+        <div class="sec-h meal-head">
+          {#if isToday}<span class="grip" title="Drag to reorder">⠿</span>{/if}
+          {#if isToday}
             <form method="POST" action="?/renameMeal" use:enhance class="meal-name-form">
               <input type="hidden" name="id" value={mid} />
               <input
@@ -235,61 +224,60 @@
                 aria-label="Meal name"
               />
             </form>
-            <span class="meal-k">{Math.round(subtotal(es)).toLocaleString()} kcal</span>
-            <form method="POST" action="?/deleteMeal" use:enhance>
-              <input type="hidden" name="id" value={mid} />
-              <button class="meal-del" type="submit" title="Delete meal" aria-label="Delete meal">✕</button>
-            </form>
-          </div>
-          {#if es.length > 0}
-            <div class="log meal-log">
-              {#each es as e (e.id)}{@render entryRow(e)}{/each}
-            </div>
+          {:else}
+            <span class="meal-name plain">{meal.name}</span>
           {/if}
-          <button class="add-row sm" type="button" onclick={() => openAdd(mid)}>+ Add food</button>
+          <span class="meal-sum">{Math.round(subtotal(es)).toLocaleString()} kcal</span>
+          {#if isToday}
+            <form method="POST" action="?/removeMeal" use:enhance class="meal-del-form">
+              <input type="hidden" name="id" value={mid} />
+              <button class="meal-del" type="submit" title="Remove meal" aria-label="Remove meal">✕</button>
+            </form>
+          {/if}
         </div>
-      {/if}
-    {/each}
-
-    {#if unsortedEntries.length > 0}
-      <div class="meal">
-        <div class="meal-h">
-          <span class="meal-name plain">Unsorted</span>
-          <span class="meal-k">{Math.round(subtotal(unsortedEntries)).toLocaleString()} kcal</span>
-        </div>
-        <div class="log meal-log">
-          {#each unsortedEntries as e (e.id)}{@render entryRow(e)}{/each}
-        </div>
-        <button class="add-row sm" type="button" onclick={() => openAdd(null)}>+ Add food</button>
-      </div>
+        {@render logBody(es, mid)}
+      </section>
     {/if}
+  {/each}
+
+  <!-- Default "Log" meal: the bucket for entries with no meal. -->
+  {#if data.mealGroups.length === 0 || unsortedEntries.length > 0}
+    <section class="meal-sec">
+      <div class="sec-h meal-head">
+        <span class="meal-name plain">Log</span>
+        <span class="meal-sum">{Math.round(subtotal(unsortedEntries)).toLocaleString()} kcal</span>
+      </div>
+      {@render logBody(unsortedEntries, null)}
+    </section>
   {/if}
 
-  <!-- New meal -->
-  {#if addingMeal}
-    <form
-      method="POST"
-      action="?/createMeal"
-      class="new-meal"
-      use:enhance={() => async ({ update }) => {
-        await update({ reset: false });
-        addingMeal = false;
-        newMealName = '';
-      }}
-    >
-      <!-- svelte-ignore a11y_autofocus -->
-      <input
-        class="new-meal-input"
-        name="name"
-        placeholder="Meal name (e.g. Breakfast)"
-        bind:value={newMealName}
-        autofocus
-      />
-      <button class="cta-sm" type="submit">Add</button>
-      <button class="ghost-sm" type="button" onclick={() => (addingMeal = false)}>Cancel</button>
-    </form>
-  {:else}
-    <button class="new-meal-btn" type="button" onclick={() => (addingMeal = true)}>+ New meal</button>
+  <!-- New meal (today only). -->
+  {#if isToday}
+    {#if addingMeal}
+      <form
+        method="POST"
+        action="?/createMeal"
+        class="new-meal"
+        use:enhance={() => async ({ update }) => {
+          await update({ reset: false });
+          addingMeal = false;
+          newMealName = '';
+        }}
+      >
+        <!-- svelte-ignore a11y_autofocus -->
+        <input
+          class="new-meal-input"
+          name="name"
+          placeholder="Meal name (e.g. Breakfast)"
+          bind:value={newMealName}
+          autofocus
+        />
+        <button class="cta-sm" type="submit">Add</button>
+        <button class="ghost-sm" type="button" onclick={() => (addingMeal = false)}>Cancel</button>
+      </form>
+    {:else}
+      <button class="new-meal-btn" type="button" onclick={() => (addingMeal = true)}>+ New meal</button>
+    {/if}
   {/if}
 </div>
 
@@ -367,9 +355,6 @@
     letter-spacing: 0.07em;
     color: var(--muted);
     margin-bottom: 10px;
-  }
-  .sec-h.mt {
-    margin-top: 22px;
   }
   .mut {
     color: var(--faint);
@@ -478,51 +463,49 @@
     background: var(--accent-soft);
     border-color: var(--accent);
   }
-  .add-row.sm {
-    padding: 8px;
-    margin-top: 8px;
-    font-size: 12px;
+  /* Meal sections — light, like the original Log header (no card border). */
+  .meal-sec {
+    margin-bottom: 18px;
   }
-
-  /* Meal groups */
-  .meal {
-    background: #fff;
-    border: 1px solid var(--line);
-    border-radius: 12px;
-    padding: 8px 12px 10px;
-    margin-bottom: 10px;
+  .meal-sec:first-of-type {
+    margin-top: 22px;
   }
-  .meal-h {
-    display: flex;
+  .meal-head {
     align-items: center;
-    gap: 8px;
-    padding: 4px 2px 8px;
-    border-bottom: 1px solid var(--line2);
+    gap: 6px;
   }
   .grip {
     color: var(--faint);
     cursor: grab;
-    font-size: 13px;
+    font-size: 12px;
     line-height: 1;
+    opacity: 0.45;
   }
-  .meal[draggable='true']:active .grip {
+  .meal-sec.draggable:hover .grip {
+    opacity: 1;
+  }
+  .meal-sec.draggable:active .grip {
     cursor: grabbing;
   }
   .meal-name-form {
+    margin: 0;
     flex: 1;
     min-width: 0;
-    margin: 0;
   }
+  /* The meal name is styled to read like the .sec-h label. */
   .meal-name {
     width: 100%;
     border: 1px solid transparent;
     border-radius: 6px;
     background: transparent;
     font: inherit;
-    font-size: 13.5px;
+    font-size: 12px;
     font-weight: 600;
-    color: var(--ink);
-    padding: 4px 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--muted);
+    padding: 3px 5px;
+    margin-left: -5px;
   }
   .meal-name:hover {
     border-color: var(--line);
@@ -531,17 +514,21 @@
     outline: none;
     border-color: var(--accent);
     background: #fff;
+    color: var(--ink);
   }
   .meal-name.plain {
     flex: 1;
-    color: var(--muted);
   }
-  .meal-k {
+  .meal-sum {
+    margin-left: auto;
     color: var(--faint);
+    font-weight: 400;
+    text-transform: none;
+    letter-spacing: 0;
     font-size: 11.5px;
     font-variant-numeric: tabular-nums;
   }
-  .meal-h form {
+  .meal-del-form {
     margin: 0;
     display: flex;
   }
@@ -550,16 +537,17 @@
     background: transparent;
     color: var(--faint);
     cursor: pointer;
-    font-size: 12px;
-    padding: 4px 6px;
-    border-radius: 6px;
+    font-size: 11px;
+    padding: 2px 5px;
+    border-radius: 5px;
+    opacity: 0.45;
+  }
+  .meal-sec:hover .meal-del {
+    opacity: 1;
   }
   .meal-del:hover {
     color: var(--over);
     background: var(--fill);
-  }
-  .meal-log {
-    margin-top: 6px;
   }
   .new-meal-btn {
     margin-top: 4px;
