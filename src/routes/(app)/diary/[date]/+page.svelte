@@ -4,25 +4,9 @@
   import AddEntryModal from '$lib/components/AddEntryModal.svelte';
   import GoalTile from '$lib/components/GoalTile.svelte';
   import GoalModal from '$lib/components/GoalModal.svelte';
-  import { invalidateAll, goto } from '$app/navigation';
+  import { invalidateAll } from '$app/navigation';
 
   let { data } = $props();
-
-  // Swipe left/right to change day (mobile); the top arrows still work too.
-  let touchStartX = 0;
-  let touchStartY = 0;
-  function onTouchStart(e: TouchEvent) {
-    touchStartX = e.touches[0].clientX;
-    touchStartY = e.touches[0].clientY;
-  }
-  function onTouchEnd(e: TouchEvent) {
-    if (modal || goalModal) return;
-    const dx = e.changedTouches[0].clientX - touchStartX;
-    const dy = e.changedTouches[0].clientY - touchStartY;
-    if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5) {
-      goto(`/diary/${dx < 0 ? data.next : data.prev}`);
-    }
-  }
 
   const catalogById = $derived(new Map(data.catalog.map((n) => [n.id, n])));
   const goalByNutrient = $derived(new Map(data.goals.map((g) => [g.nutrientId, g])));
@@ -158,8 +142,7 @@
   </div>
 </header>
 
-<!-- svelte-ignore a11y_no_static_element_interactions -->
-<div class="body" ontouchstart={onTouchStart} ontouchend={onTouchEnd}>
+<div class="body">
   <div class="sec-h">
     <span>Goals</span>
     {#if isToday}
@@ -304,7 +287,11 @@
 </div>
 
 <!-- Floating quick-add (mobile only, thumb-reachable). -->
-<button class="fab" type="button" onclick={() => openAdd(null)} aria-label="Add food">+</button>
+<button class="fab" type="button" onclick={() => openAdd(null)} aria-label="Add food">
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round">
+    <path d="M12 5v14M5 12h14" />
+  </svg>
+</button>
 
 {#if modal}
   {#key modalKey}
@@ -416,9 +403,10 @@
       background: var(--accent);
       color: #fff;
       border: none;
-      font-size: 30px;
-      line-height: 1;
-      box-shadow: 0 8px 20px rgba(239, 138, 60, 0.45);
+      box-shadow:
+        0 4px 12px rgba(0, 0, 0, 0.22),
+        0 1px 3px rgba(0, 0, 0, 0.12),
+        inset 0 0 0 1px rgba(255, 255, 255, 0.15);
       z-index: 30;
       cursor: pointer;
     }
