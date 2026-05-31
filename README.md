@@ -6,9 +6,10 @@ See [DESIGN.md](DESIGN.md) for the full design and roadmap.
 > **Status:** milestone 6 — Open Food Facts. Done so far: scaffold + schema (m1),
 > session-cookie auth + admin user management (m2), the local-food layer with a
 > named-units editor (m3), diary logging with unit→grams math and per-day totals (m4),
-> effective-dated goals with per-card editing (m5), and Open Food Facts search +
-> import-to-shared-cache + per-user "customize" overrides, wired into the add-food
-> modal (m6). Meal groups and graphs follow next.
+> effective-dated goals with per-card editing (m5), Open Food Facts search +
+> import-to-shared-cache + per-user "customize" overrides (m6), and user-defined
+> meal groups — the diary log groups entries by meal with per-meal subtotals,
+> drag-reorder, and an Unsorted catch-all (m7). Graphs follow next.
 
 ## Stack
 

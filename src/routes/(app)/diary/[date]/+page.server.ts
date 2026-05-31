@@ -3,6 +3,13 @@ import { addDays, formatDayLabel, isValidDate, relativeLabel, todayInTz } from '
 import { getDay, addEntry, updateEntry, deleteEntry } from '$lib/server/diary';
 import { nutrientCatalog, listFoodsForPicker } from '$lib/server/foods';
 import { getVisibleGoals, saveGoalCard, deleteGoalCard, reorderGoals } from '$lib/server/goals';
+import {
+  listMealGroups,
+  createMealGroup,
+  renameMealGroup,
+  deleteMealGroup,
+  reorderMealGroups
+} from '$lib/server/mealgroups';
 import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = ({ params, locals }) => {
@@ -26,7 +33,8 @@ export const load: PageServerLoad = ({ params, locals }) => {
     totals: day.totals,
     catalog: nutrientCatalog(),
     foods: listFoodsForPicker(user.id),
-    goals: getVisibleGoals(user.id, date)
+    goals: getVisibleGoals(user.id, date),
+    mealGroups: listMealGroups(user.id)
   };
 };
 
@@ -36,6 +44,13 @@ function parseOptionalNumber(raw: FormDataEntryValue | null): number | null {
   if (s === '') return null;
   const n = Number(s);
   return Number.isNaN(n) ? null : n;
+}
+
+/** Parse an optional integer meal-group id from a form field ('' = none). */
+function parseMealGroupId(raw: FormDataEntryValue | null): number | null {
+  if (raw === null || raw === '') return null;
+  const n = Number(raw);
+  return Number.isInteger(n) ? n : null;
 }
 
 function parseUnitId(raw: FormDataEntryValue | null): number | null {
@@ -54,7 +69,8 @@ export const actions: Actions = {
     if (!Number.isInteger(foodId)) return fail(400, { error: 'Pick a food.' });
     if (!(amount > 0)) return fail(400, { error: 'Amount must be greater than 0.' });
 
-    const id = addEntry(locals.user!.id, params.date, { foodId, amount, unitId });
+    const mealGroupId = parseMealGroupId(f.get('mealGroupId'));
+    const id = addEntry(locals.user!.id, params.date, { foodId, amount, unitId }, mealGroupId);
     if (id === null) return fail(400, { error: 'Could not add that entry.' });
     return { added: true };
   },
@@ -64,10 +80,11 @@ export const actions: Actions = {
     const id = Number(f.get('id'));
     const amount = Number(f.get('amount'));
     const unitId = parseUnitId(f.get('unitId'));
+    const mealGroupId = parseMealGroupId(f.get('mealGroupId'));
     if (!Number.isInteger(id)) return fail(400, { error: 'Invalid entry.' });
     if (!(amount > 0)) return fail(400, { error: 'Amount must be greater than 0.' });
 
-    const ok = updateEntry(locals.user!.id, id, amount, unitId);
+    const ok = updateEntry(locals.user!.id, id, amount, unitId, mealGroupId);
     if (!ok) return fail(400, { error: 'Could not update that entry.' });
     return { updated: true };
   },
@@ -125,5 +142,43 @@ export const actions: Actions = {
     }
     reorderGoals(locals.user!.id, order);
     return { reordered: true };
+  },
+
+  // --- Meal groups ---
+
+  createMeal: async ({ request, locals }) => {
+    const name = String((await request.formData()).get('name') ?? '').trim();
+    if (!name) return fail(400, { error: 'Meal needs a name.' });
+    const id = createMealGroup(locals.user!.id, name);
+    if (id === null) return fail(400, { error: 'Could not create meal.' });
+    return { mealCreated: id };
+  },
+
+  renameMeal: async ({ request, locals }) => {
+    const f = await request.formData();
+    const id = Number(f.get('id'));
+    const name = String(f.get('name') ?? '').trim();
+    if (!Number.isInteger(id) || !name) return fail(400, { error: 'Invalid meal.' });
+    renameMealGroup(locals.user!.id, id, name);
+    return { mealRenamed: true };
+  },
+
+  deleteMeal: async ({ request, locals }) => {
+    const id = Number((await request.formData()).get('id'));
+    if (!Number.isInteger(id)) return fail(400, { error: 'Invalid meal.' });
+    deleteMealGroup(locals.user!.id, id);
+    return { mealDeleted: true };
+  },
+
+  reorderMeals: async ({ request, locals }) => {
+    const raw = (await request.formData()).get('order');
+    let order: number[] = [];
+    try {
+      order = JSON.parse(String(raw)).map((n: unknown) => Number(n)).filter(Number.isInteger);
+    } catch {
+      return fail(400, { error: 'Bad order.' });
+    }
+    reorderMealGroups(locals.user!.id, order);
+    return { mealsReordered: true };
   }
 };

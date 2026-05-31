@@ -1,6 +1,7 @@
 import { and, eq, inArray, asc } from 'drizzle-orm';
 import { db } from './db/index';
 import { foods, foodNutrients, foodUnits, diaryEntries, nutrients } from './db/schema';
+import { mealGroupOwned } from './mealgroups';
 
 export type DiaryEntryView = {
   id: number;
@@ -130,6 +131,11 @@ function foodLoggable(userId: number, foodId: number): boolean {
 
 export type EntryInput = { foodId: number; amount: number; unitId: number | null };
 
+/** null meal group is fine; otherwise it must belong to the user. */
+function mealGroupValid(userId: number, mealGroupId: number | null): boolean {
+  return mealGroupId === null || mealGroupOwned(userId, mealGroupId);
+}
+
 /** Add a diary entry. Returns the new id, or null on validation failure. */
 export function addEntry(
   userId: number,
@@ -141,6 +147,7 @@ export function addEntry(
   if (!foodLoggable(userId, input.foodId)) return null;
   const { ok } = unitGramsForFood(input.foodId, input.unitId);
   if (!ok) return null;
+  if (!mealGroupValid(userId, mealGroupId)) return null;
 
   const inserted = db
     .insert(diaryEntries)
@@ -157,12 +164,13 @@ export function addEntry(
   return inserted.id;
 }
 
-/** Update an entry's amount/unit (must belong to the user). */
+/** Update an entry's amount/unit and meal group (must belong to the user). */
 export function updateEntry(
   userId: number,
   id: number,
   amount: number,
-  unitId: number | null
+  unitId: number | null,
+  mealGroupId: number | null
 ): boolean {
   const entry = db
     .select({ foodId: diaryEntries.foodId })
@@ -173,8 +181,9 @@ export function updateEntry(
   if (!(amount > 0)) return false;
   const { ok } = unitGramsForFood(entry.foodId, unitId);
   if (!ok) return false;
+  if (!mealGroupValid(userId, mealGroupId)) return false;
 
-  db.update(diaryEntries).set({ amount, unitId }).where(eq(diaryEntries.id, id)).run();
+  db.update(diaryEntries).set({ amount, unitId, mealGroupId }).where(eq(diaryEntries.id, id)).run();
   return true;
 }
 

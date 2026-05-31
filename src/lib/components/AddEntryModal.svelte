@@ -2,33 +2,47 @@
   import { untrack } from 'svelte';
   import { enhance } from '$app/forms';
   import type { PickerFood } from '$lib/server/foods';
-  import type { Nutrient } from '$lib/server/db/schema';
+  import type { Nutrient, MealGroup } from '$lib/server/db/schema';
 
-  type Editing = { id: number; foodId: number; amount: number; unitId: number | null };
+  type Editing = {
+    id: number;
+    foodId: number;
+    amount: number;
+    unitId: number | null;
+    mealGroupId: number | null;
+  };
 
   let {
     foods,
     catalog,
+    mealGroups,
     editing = null,
+    defaultMealGroupId = null,
     onclose
-  }: { foods: PickerFood[]; catalog: Nutrient[]; editing?: Editing | null; onclose: () => void } = $props();
+  }: {
+    foods: PickerFood[];
+    catalog: Nutrient[];
+    mealGroups: MealGroup[];
+    editing?: Editing | null;
+    defaultMealGroupId?: number | null;
+    onclose: () => void;
+  } = $props();
 
   const init = untrack(() => {
+    const mealId = editing ? editing.mealGroupId : defaultMealGroupId;
+    const mealGroupId = mealId === null || mealId === undefined ? '' : String(mealId);
     if (editing) {
       const food = foods.find((f) => f.id === editing.foodId) ?? null;
-      return {
-        food,
-        amount: String(editing.amount),
-        unitId: editing.unitId === null ? 'g' : String(editing.unitId)
-      };
+      return { food, amount: String(editing.amount), unitId: editing.unitId === null ? 'g' : String(editing.unitId), mealGroupId };
     }
-    return { food: null as PickerFood | null, amount: '', unitId: 'g' };
+    return { food: null as PickerFood | null, amount: '', unitId: 'g', mealGroupId };
   });
 
   let query = $state('');
   let selected = $state<PickerFood | null>(init.food);
   let amount = $state(init.amount);
   let unitId = $state(init.unitId);
+  let mealGroupId = $state(init.mealGroupId);
 
   const shown = $derived(
     foods.filter((f) => {
@@ -227,6 +241,7 @@
             }}
           >
             <input type="hidden" name="foodId" value={selected.id} />
+            <input type="hidden" name="mealGroupId" value={mealGroupId} />
             {#if editing}<input type="hidden" name="id" value={editing.id} />{/if}
 
             <div class="detail-h">
@@ -263,6 +278,18 @@
             </div>
 
             <div class="grams-line">= {grams ? `${Math.round(grams * 100) / 100} g` : '—'}</div>
+
+            {#if mealGroups.length > 0}
+              <label class="field meal-field">
+                <span>Meal</span>
+                <select bind:value={mealGroupId}>
+                  <option value="">Unsorted</option>
+                  {#each mealGroups as m (m.id)}
+                    <option value={String(m.id)}>{m.name}</option>
+                  {/each}
+                </select>
+              </label>
+            {/if}
 
             {#if breakdown.length > 0}
               <div class="breakdown">
@@ -509,6 +536,9 @@
     margin-top: 10px;
     font-size: 12px;
     color: var(--muted);
+  }
+  .meal-field {
+    margin-top: 12px;
   }
   .breakdown {
     margin-top: 10px;

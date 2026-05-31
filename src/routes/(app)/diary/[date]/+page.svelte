@@ -1,5 +1,6 @@
 <script lang="ts">
   import { untrack } from 'svelte';
+  import { enhance } from '$app/forms';
   import AddEntryModal from '$lib/components/AddEntryModal.svelte';
   import GoalTile from '$lib/components/GoalTile.svelte';
   import GoalModal from '$lib/components/GoalModal.svelte';
@@ -16,15 +17,67 @@
   const canAddGoal = $derived(isToday && data.goals.length < data.catalog.length);
 
   // --- entry add/edit modal ---
-  type Editing = { id: number; foodId: number; amount: number; unitId: number | null };
-  let modal = $state<{ editing: Editing | null } | null>(null);
-  const modalKey = $derived(modal?.editing ? `e${modal.editing.id}` : 'new');
-  function openAdd() {
-    modal = { editing: null };
+  type Editing = {
+    id: number;
+    foodId: number;
+    amount: number;
+    unitId: number | null;
+    mealGroupId: number | null;
+  };
+  let modal = $state<{ editing: Editing | null; mealId: number | null } | null>(null);
+  const modalKey = $derived(modal?.editing ? `e${modal.editing.id}` : `new-${modal?.mealId ?? ''}`);
+  function openAdd(mealId: number | null = null) {
+    modal = { editing: null, mealId };
   }
   function openEdit(e: (typeof data.entries)[number]) {
-    modal = { editing: { id: e.id, foodId: e.foodId, amount: e.amount, unitId: e.unitId } };
+    modal = {
+      editing: { id: e.id, foodId: e.foodId, amount: e.amount, unitId: e.unitId, mealGroupId: e.mealGroupId },
+      mealId: null
+    };
   }
+
+  // --- meal groups: grouping, subtotals, drag-reorder, add ---
+  const mealById = $derived(new Map(data.mealGroups.map((m) => [m.id, m])));
+  function entriesFor(mealId: number | null) {
+    return data.entries.filter((e) => e.mealGroupId === mealId);
+  }
+  const unsortedEntries = $derived(entriesFor(null));
+  function subtotal(es: (typeof data.entries)) {
+    return es.reduce((s, e) => s + (e.energy ?? 0), 0);
+  }
+
+  let mealOrder = $state<number[]>(untrack(() => data.mealGroups.map((m) => m.id)));
+  $effect(() => {
+    mealOrder = data.mealGroups.map((m) => m.id);
+  });
+  let mealDragFrom = $state<number | null>(null);
+  let mealDragChanged = false;
+  function onMealDragStart(i: number) {
+    mealDragFrom = i;
+    mealDragChanged = false;
+  }
+  function onMealDragOver(i: number, e: DragEvent) {
+    e.preventDefault();
+    if (mealDragFrom === null || mealDragFrom === i) return;
+    const next = [...mealOrder];
+    const [moved] = next.splice(mealDragFrom, 1);
+    next.splice(i, 0, moved);
+    mealOrder = next;
+    mealDragFrom = i;
+    mealDragChanged = true;
+  }
+  async function onMealDragEnd() {
+    mealDragFrom = null;
+    if (!mealDragChanged) return;
+    mealDragChanged = false;
+    const body = new FormData();
+    body.set('order', JSON.stringify(mealOrder));
+    await fetch('?/reorderMeals', { method: 'POST', body, headers: { 'x-sveltekit-action': 'true' } });
+    await invalidateAll();
+  }
+
+  let addingMeal = $state(false);
+  let newMealName = $state('');
 
   // --- goal add/edit modal ---
   type GoalEditing = { nutrientId: number; min: number | null; max: number | null };
@@ -132,31 +185,124 @@
     </div>
   {/if}
 
+  {#snippet entryRow(e: (typeof data.entries)[number])}
+    <button class="entry" type="button" onclick={() => openEdit(e)}>
+      <span class="e-nm">{e.foodName}{#if e.brand}<em> · {e.brand}</em>{/if}</span>
+      <span class="e-amt">{e.unitLabel}</span>
+      <span class="e-k">{e.energy === null ? '—' : Math.round(e.energy).toLocaleString()}</span>
+    </button>
+  {/snippet}
+
   <div class="sec-h mt">
     <span>Log</span>
     <span class="mut">{Math.round(totalEnergy).toLocaleString()} kcal · {data.entries.length} item{data.entries.length === 1 ? '' : 's'}</span>
   </div>
 
-  {#if data.entries.length === 0}
-    <p class="empty">No food logged for this day.</p>
+  {#if data.mealGroups.length === 0}
+    <!-- No meals defined → flat list. -->
+    {#if data.entries.length === 0}
+      <p class="empty">No food logged for this day.</p>
+    {:else}
+      <div class="log">
+        {#each data.entries as e (e.id)}{@render entryRow(e)}{/each}
+      </div>
+    {/if}
+    <button class="add-row" type="button" onclick={() => openAdd(null)}>+ Add food</button>
   {:else}
-    <div class="log">
-      {#each data.entries as e (e.id)}
-        <button class="entry" type="button" onclick={() => openEdit(e)}>
-          <span class="e-nm">{e.foodName}{#if e.brand}<em> · {e.brand}</em>{/if}</span>
-          <span class="e-amt">{e.unitLabel}</span>
-          <span class="e-k">{e.energy === null ? '—' : Math.round(e.energy).toLocaleString()}</span>
-        </button>
-      {/each}
-    </div>
+    <!-- Grouped by user-defined meals. -->
+    {#each mealOrder as mid (mid)}
+      {@const meal = mealById.get(mid)}
+      {#if meal}
+        {@const es = entriesFor(mid)}
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <div
+          class="meal"
+          role="group"
+          draggable="true"
+          ondragstart={() => onMealDragStart(mealOrder.indexOf(mid))}
+          ondragover={(e) => onMealDragOver(mealOrder.indexOf(mid), e)}
+          ondragend={onMealDragEnd}
+        >
+          <div class="meal-h">
+            <span class="grip" title="Drag to reorder">⠿</span>
+            <form method="POST" action="?/renameMeal" use:enhance class="meal-name-form">
+              <input type="hidden" name="id" value={mid} />
+              <input
+                class="meal-name"
+                name="name"
+                value={meal.name}
+                onchange={(e) => e.currentTarget.form?.requestSubmit()}
+                aria-label="Meal name"
+              />
+            </form>
+            <span class="meal-k">{Math.round(subtotal(es)).toLocaleString()} kcal</span>
+            <form method="POST" action="?/deleteMeal" use:enhance>
+              <input type="hidden" name="id" value={mid} />
+              <button class="meal-del" type="submit" title="Delete meal" aria-label="Delete meal">✕</button>
+            </form>
+          </div>
+          {#if es.length > 0}
+            <div class="log meal-log">
+              {#each es as e (e.id)}{@render entryRow(e)}{/each}
+            </div>
+          {/if}
+          <button class="add-row sm" type="button" onclick={() => openAdd(mid)}>+ Add food</button>
+        </div>
+      {/if}
+    {/each}
+
+    {#if unsortedEntries.length > 0}
+      <div class="meal">
+        <div class="meal-h">
+          <span class="meal-name plain">Unsorted</span>
+          <span class="meal-k">{Math.round(subtotal(unsortedEntries)).toLocaleString()} kcal</span>
+        </div>
+        <div class="log meal-log">
+          {#each unsortedEntries as e (e.id)}{@render entryRow(e)}{/each}
+        </div>
+        <button class="add-row sm" type="button" onclick={() => openAdd(null)}>+ Add food</button>
+      </div>
+    {/if}
   {/if}
 
-  <button class="add-row" type="button" onclick={openAdd}>+ Add food</button>
+  <!-- New meal -->
+  {#if addingMeal}
+    <form
+      method="POST"
+      action="?/createMeal"
+      class="new-meal"
+      use:enhance={() => async ({ update }) => {
+        await update({ reset: false });
+        addingMeal = false;
+        newMealName = '';
+      }}
+    >
+      <!-- svelte-ignore a11y_autofocus -->
+      <input
+        class="new-meal-input"
+        name="name"
+        placeholder="Meal name (e.g. Breakfast)"
+        bind:value={newMealName}
+        autofocus
+      />
+      <button class="cta-sm" type="submit">Add</button>
+      <button class="ghost-sm" type="button" onclick={() => (addingMeal = false)}>Cancel</button>
+    </form>
+  {:else}
+    <button class="new-meal-btn" type="button" onclick={() => (addingMeal = true)}>+ New meal</button>
+  {/if}
 </div>
 
 {#if modal}
   {#key modalKey}
-    <AddEntryModal foods={data.foods} catalog={data.catalog} editing={modal.editing} onclose={() => (modal = null)} />
+    <AddEntryModal
+      foods={data.foods}
+      catalog={data.catalog}
+      mealGroups={data.mealGroups}
+      editing={modal.editing}
+      defaultMealGroupId={modal.mealId}
+      onclose={() => (modal = null)}
+    />
   {/key}
 {/if}
 
@@ -331,5 +477,133 @@
   .add-row:hover {
     background: var(--accent-soft);
     border-color: var(--accent);
+  }
+  .add-row.sm {
+    padding: 8px;
+    margin-top: 8px;
+    font-size: 12px;
+  }
+
+  /* Meal groups */
+  .meal {
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 8px 12px 10px;
+    margin-bottom: 10px;
+  }
+  .meal-h {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 2px 8px;
+    border-bottom: 1px solid var(--line2);
+  }
+  .grip {
+    color: var(--faint);
+    cursor: grab;
+    font-size: 13px;
+    line-height: 1;
+  }
+  .meal[draggable='true']:active .grip {
+    cursor: grabbing;
+  }
+  .meal-name-form {
+    flex: 1;
+    min-width: 0;
+    margin: 0;
+  }
+  .meal-name {
+    width: 100%;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background: transparent;
+    font: inherit;
+    font-size: 13.5px;
+    font-weight: 600;
+    color: var(--ink);
+    padding: 4px 6px;
+  }
+  .meal-name:hover {
+    border-color: var(--line);
+  }
+  .meal-name:focus {
+    outline: none;
+    border-color: var(--accent);
+    background: #fff;
+  }
+  .meal-name.plain {
+    flex: 1;
+    color: var(--muted);
+  }
+  .meal-k {
+    color: var(--faint);
+    font-size: 11.5px;
+    font-variant-numeric: tabular-nums;
+  }
+  .meal-h form {
+    margin: 0;
+    display: flex;
+  }
+  .meal-del {
+    border: none;
+    background: transparent;
+    color: var(--faint);
+    cursor: pointer;
+    font-size: 12px;
+    padding: 4px 6px;
+    border-radius: 6px;
+  }
+  .meal-del:hover {
+    color: var(--over);
+    background: var(--fill);
+  }
+  .meal-log {
+    margin-top: 6px;
+  }
+  .new-meal-btn {
+    margin-top: 4px;
+    border: none;
+    background: transparent;
+    color: var(--accent-ink);
+    font-weight: 600;
+    font-size: 12.5px;
+    cursor: pointer;
+    padding: 6px 2px;
+  }
+  .new-meal-btn:hover {
+    text-decoration: underline;
+  }
+  .new-meal {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-top: 4px;
+  }
+  .new-meal-input {
+    flex: 1;
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    padding: 8px 11px;
+    font-size: 13px;
+  }
+  .cta-sm {
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: 9px;
+    padding: 8px 14px;
+    font-weight: 600;
+    font-size: 12.5px;
+    cursor: pointer;
+  }
+  .ghost-sm {
+    border: 1px solid var(--line);
+    background: #fff;
+    color: var(--muted);
+    border-radius: 9px;
+    padding: 8px 12px;
+    font-size: 12.5px;
+    cursor: pointer;
   }
 </style>
