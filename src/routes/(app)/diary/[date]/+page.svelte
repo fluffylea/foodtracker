@@ -54,31 +54,6 @@
   $effect(() => {
     mealOrder = data.mealGroups.map((m) => m.id);
   });
-  let mealDragFrom = $state<number | null>(null);
-  let mealDragChanged = false;
-  function onMealDragStart(i: number) {
-    mealDragFrom = i;
-    mealDragChanged = false;
-  }
-  function onMealDragOver(i: number, e: DragEvent) {
-    e.preventDefault();
-    if (mealDragFrom === null || mealDragFrom === i) return;
-    const next = [...mealOrder];
-    const [moved] = next.splice(mealDragFrom, 1);
-    next.splice(i, 0, moved);
-    mealOrder = next;
-    mealDragFrom = i;
-    mealDragChanged = true;
-  }
-  async function onMealDragEnd() {
-    mealDragFrom = null;
-    if (!mealDragChanged) return;
-    mealDragChanged = false;
-    const body = new FormData();
-    body.set('order', JSON.stringify(mealOrder));
-    await fetch('?/reorderMeals', { method: 'POST', body, headers: { 'x-sveltekit-action': 'true' } });
-    await invalidateAll();
-  }
 
   let addingMeal = $state(false);
   let newMealName = $state('');
@@ -94,38 +69,65 @@
     goalModal = { editing: { nutrientId: g.nutrientId, min: g.targetMin, max: g.targetMax } };
   }
 
-  // --- drag-to-reorder (today only) ---
-  // Initialised for SSR/first render; the effect resyncs after the goal set
-  // changes (reorder/add/delete, or navigating to another day).
+  // Goal order (today only); resynced after the goal set changes.
   let order = $state<number[]>(untrack(() => data.goals.map((g) => g.nutrientId)));
   $effect(() => {
     order = data.goals.map((g) => g.nutrientId);
   });
-  let dragFrom = $state<number | null>(null);
-  let dragChanged = false;
 
-  function onDragStart(i: number) {
-    dragFrom = i;
-    dragChanged = false;
+  // --- pointer-based reorder (works on touch AND mouse) ---
+  // Started from a grip handle (touch-action: none) so it never fights page
+  // scroll. elementFromPoint finds the item under the pointer; the live order
+  // updates as you drag and persists on release. (Native HTML5 drag-and-drop
+  // doesn't fire on touch devices, which is why the old version was broken.)
+  let dragKind = $state<'goal' | 'meal' | null>(null);
+  let dragId = $state<number | null>(null);
+  let dragMoved = false;
+
+  function moveTo(arr: number[], id: number, targetId: number): number[] {
+    const from = arr.indexOf(id);
+    const to = arr.indexOf(targetId);
+    if (from < 0 || to < 0 || from === to) return arr;
+    const next = [...arr];
+    next.splice(from, 1);
+    next.splice(to, 0, id);
+    return next;
   }
-  function onDragOver(i: number, e: DragEvent) {
-    e.preventDefault();
-    if (dragFrom === null || dragFrom === i) return;
-    const next = [...order];
-    const [moved] = next.splice(dragFrom, 1);
-    next.splice(i, 0, moved);
-    order = next;
-    dragFrom = i;
-    dragChanged = true;
+  function onReorderMove(e: PointerEvent) {
+    if (dragKind === null || dragId === null) return;
+    const el = document.elementFromPoint(e.clientX, e.clientY)?.closest(`[data-${dragKind}-id]`);
+    if (!el) return;
+    const targetId = Number(el.getAttribute(`data-${dragKind}-id`));
+    if (!Number.isInteger(targetId) || targetId === dragId) return;
+    dragMoved = true;
+    if (dragKind === 'goal') order = moveTo(order, dragId, targetId);
+    else mealOrder = moveTo(mealOrder, dragId, targetId);
   }
-  async function onDragEnd() {
-    dragFrom = null;
-    if (!dragChanged) return;
-    dragChanged = false;
+  async function onReorderUp() {
+    window.removeEventListener('pointermove', onReorderMove);
+    const kind = dragKind;
+    const moved = dragMoved;
+    dragKind = null;
+    dragId = null;
+    dragMoved = false;
+    if (!moved || kind === null) return;
     const body = new FormData();
-    body.set('order', JSON.stringify(order));
-    await fetch('?/reorderGoals', { method: 'POST', body, headers: { 'x-sveltekit-action': 'true' } });
+    body.set('order', JSON.stringify(kind === 'goal' ? order : mealOrder));
+    await fetch(kind === 'goal' ? '?/reorderGoals' : '?/reorderMeals', {
+      method: 'POST',
+      body,
+      headers: { 'x-sveltekit-action': 'true' }
+    });
     await invalidateAll();
+  }
+  function startReorder(kind: 'goal' | 'meal', id: number, e: PointerEvent) {
+    if (!isToday) return;
+    e.preventDefault();
+    dragKind = kind;
+    dragId = id;
+    dragMoved = false;
+    window.addEventListener('pointermove', onReorderMove);
+    window.addEventListener('pointerup', onReorderUp, { once: true });
   }
 </script>
 
@@ -159,16 +161,11 @@
         {@const g = goalByNutrient.get(nid)}
         {@const n = catalogById.get(nid)}
         {#if g && n}
-          <div
-            class="tile-wrap"
-            class:dragging={dragFrom !== null}
-            draggable={isToday}
-            role={isToday ? 'button' : undefined}
-            tabindex="-1"
-            ondragstart={() => onDragStart(order.indexOf(nid))}
-            ondragover={(e) => isToday && onDragOver(order.indexOf(nid), e)}
-            ondragend={onDragEnd}
-          >
+          <div class="tile-wrap" class:dragging={dragKind === 'goal' && dragId === nid} data-goal-id={nid}>
+            {#if isToday}
+              <!-- svelte-ignore a11y_no_static_element_interactions -->
+              <span class="tgrip" onpointerdown={(e) => startReorder('goal', nid, e)} title="Drag to reorder">⠿</span>
+            {/if}
             <GoalTile
               name={n.name}
               unit={n.unit}
@@ -206,17 +203,12 @@
     {@const meal = mealById.get(mid)}
     {#if meal}
       {@const es = entriesFor(mid)}
-      <!-- svelte-ignore a11y_no_static_element_interactions -->
-      <section
-        class="meal-sec"
-        class:draggable={isToday}
-        draggable={isToday}
-        ondragstart={() => isToday && onMealDragStart(mealOrder.indexOf(mid))}
-        ondragover={(e) => isToday && onMealDragOver(mealOrder.indexOf(mid), e)}
-        ondragend={() => isToday && onMealDragEnd()}
-      >
+      <section class="meal-sec" class:dragging={dragKind === 'meal' && dragId === mid} data-meal-id={mid}>
         <div class="sec-h meal-head">
-          {#if isToday}<span class="grip" title="Drag to reorder">⠿</span>{/if}
+          {#if isToday}
+            <!-- svelte-ignore a11y_no_static_element_interactions -->
+            <span class="grip" onpointerdown={(e) => startReorder('meal', mid, e)} title="Drag to reorder">⠿</span>
+          {/if}
           {#if isToday}
             <form method="POST" action="?/renameMeal" use:enhance class="meal-name-form">
               <input type="hidden" name="id" value={mid} />
@@ -416,12 +408,27 @@
   }
   .tile-wrap {
     display: flex;
+    position: relative;
   }
-  .tile-wrap[draggable='true'] {
+  .tile-wrap.dragging {
+    opacity: 0.5;
+  }
+  .tgrip {
+    position: absolute;
+    top: 6px;
+    left: 7px;
+    z-index: 2;
+    color: var(--faint);
+    font-size: 11px;
+    line-height: 1;
+    padding: 3px;
     cursor: grab;
+    touch-action: none;
+    opacity: 0.45;
   }
-  .tile-wrap.dragging[draggable='true'] {
+  .tgrip:active {
     cursor: grabbing;
+    opacity: 1;
   }
   .link-btn {
     border: none;
@@ -522,15 +529,19 @@
   .grip {
     color: var(--faint);
     cursor: grab;
-    font-size: 12px;
+    font-size: 13px;
     line-height: 1;
-    opacity: 0.45;
+    padding: 4px 2px;
+    margin: -4px 0;
+    opacity: 0.55;
+    touch-action: none;
   }
-  .meal-sec.draggable:hover .grip {
+  .grip:active {
+    cursor: grabbing;
     opacity: 1;
   }
-  .meal-sec.draggable:active .grip {
-    cursor: grabbing;
+  .meal-sec.dragging {
+    opacity: 0.5;
   }
   .meal-name-form {
     margin: 0;
