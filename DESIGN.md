@@ -213,6 +213,17 @@ Recipe nutrition = sum of components, recomputed live, with optional per-serving
 - **Graphs direction** — A (chips + overlay) vs B (left control panel). Leaning A; not final.
 - **Trends normalization toggle** — % of goal / z-score / raw — keep all three or simplify?
 
+## 12. Responsive / polish backlog (deferred to final polish)
+
+Layout is desktop-first right now and overflows on narrow widths (e.g. the goal
+tile grid runs off-screen). Planned responsive steps, to do during final polish:
+- **Left rail** → collapsible / off-canvas drawer below a breakpoint (hamburger).
+- **Goal tile grid** → step 4 → 3 → 2 → 1 columns as width shrinks.
+- **Add-food modal** two-pane → stacked single column on mobile (the wireframes
+  already sketch the mobile slide-over flow).
+- General: fluid paddings, min-width guards on rows, wrap long labels.
+Tracked here so it isn't forgotten; not blocking feature milestones.
+
 ## 11. Security backlog (deferred, hand-rolled auth kept)
 
 Auth uses standard primitives (scrypt, hashed 256-bit session tokens, httpOnly/Lax

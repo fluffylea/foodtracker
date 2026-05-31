@@ -93,10 +93,14 @@
 <div class="body">
   <div class="sec-h">
     <span>Goals</span>
-    {#if !isToday}<span class="mut">viewing {data.date} · edit goals on today</span>{/if}
+    {#if isToday}
+      {#if canAddGoal}<button class="link-btn" type="button" onclick={openAddGoal}>+ Add goal</button>{/if}
+    {:else}
+      <span class="mut">viewing {data.date} · edit goals on today</span>
+    {/if}
   </div>
-  {#if data.goals.length === 0 && !canAddGoal}
-    <p class="empty">No goals for this day.</p>
+  {#if data.goals.length === 0}
+    <p class="empty">{isToday ? 'No goals yet — add one to start tracking.' : 'No goals for this day.'}</p>
   {:else}
     <div class="tiles">
       {#each order as nid (nid)}
@@ -125,9 +129,6 @@
           </div>
         {/if}
       {/each}
-      {#if canAddGoal}
-        <button class="add-tile" type="button" onclick={openAddGoal}>+ Add goal</button>
-      {/if}
     </div>
   {/if}
 
@@ -246,19 +247,20 @@
   .tile-wrap.dragging[draggable='true'] {
     cursor: grabbing;
   }
-  .add-tile {
-    border: 1px dashed var(--line);
-    border-radius: 11px;
+  .link-btn {
+    border: none;
     background: transparent;
-    color: var(--accent-ink);
+    padding: 0;
+    font: inherit;
+    font-size: 12px;
     font-weight: 600;
-    font-size: 13px;
+    color: var(--accent-ink);
+    text-transform: none;
+    letter-spacing: 0;
     cursor: pointer;
-    min-height: 72px;
   }
-  .add-tile:hover {
-    background: var(--accent-soft);
-    border-color: var(--accent);
+  .link-btn:hover {
+    text-decoration: underline;
   }
   .log {
     background: #fff;

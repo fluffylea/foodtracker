@@ -36,9 +36,11 @@
   const name = $derived(catalog.find((n) => n.id === nutrientId)?.name ?? '');
 
   // Mode derived from which fields are filled — drives the explanatory hint.
+  // Coerce with a template literal: a number <input> binding can hand back a
+  // number, and `.trim()` on that would throw and freeze the derived.
+  const hasMin = $derived(`${min ?? ''}`.trim() !== '');
+  const hasMax = $derived(`${max ?? ''}`.trim() !== '');
   const modeHint = $derived.by(() => {
-    const hasMin = min.trim() !== '';
-    const hasMax = max.trim() !== '';
     if (hasMin && hasMax) return `Range — keep ${name} between the two values.`;
     if (hasMin) return `Minimum — reach at least the target.`;
     if (hasMax) return `Maximum — stay under the cap.`;
