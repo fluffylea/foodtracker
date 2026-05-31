@@ -27,6 +27,8 @@ export const users = sqliteTable('users', {
   // Per-user preferences (DESIGN.md §2).
   energyUnit: text('energy_unit', { enum: ['kcal', 'kj'] }).notNull().default('kcal'),
   timezone: text('timezone').notNull().default('UTC'),
+  // First day of the week for the Trends week view: 0 = Sunday, 1 = Monday.
+  weekStart: integer('week_start').notNull().default(1),
   createdAt: integer('created_at').notNull().default(now)
 });
 

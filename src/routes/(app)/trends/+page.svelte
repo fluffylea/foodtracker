@@ -3,6 +3,8 @@
 
   let { data } = $props();
 
+  const viewLabel = { week: 'Week', month: 'Month', quarter: 'Quarter', year: 'Year' };
+
   // Stable color per nutrient (by catalog position).
   const PALETTE = ['#ef8a3c', '#6f9e63', '#7c8896', '#2c2a27', '#c96442', '#5a8fb0', '#b08968', '#9a7bb0'];
   const colorById = $derived(
@@ -41,23 +43,32 @@
   function fmt(v: number, unit: string): string {
     return unit === 'kcal' ? Math.round(v).toLocaleString() : String(Math.round(v * 10) / 10);
   }
+  // Average over logged points only (value > 0); 0 means "no data" for that day.
   function avg(values: number[]): number {
-    if (values.length === 0) return 0;
-    return values.reduce((s, v) => s + v, 0) / values.length;
+    const v = values.filter((x) => x > 0);
+    return v.length ? v.reduce((s, x) => s + x, 0) / v.length : 0;
   }
 </script>
 
 <svelte:head><title>Plate · Trends</title></svelte:head>
 
 <header class="top">
-  <div class="date-t">
-    <h2>Trends</h2>
-    <div class="sub">each metric normalized to its own range · last {data.days} days</div>
+  <div class="navrow">
+    <a class="arw" href="?view={data.view}&ref={data.prevRef}" aria-label="Previous period">‹</a>
+    <div class="date-t">
+      <h2>{data.label}</h2>
+      <div class="sub">{viewLabel[data.view]} · each metric to its own range</div>
+    </div>
+    {#if data.atLatest}
+      <span class="arw disabled" aria-hidden="true">›</span>
+    {:else}
+      <a class="arw" href="?view={data.view}&ref={data.nextRef}" aria-label="Next period">›</a>
+    {/if}
   </div>
   <div class="seg">
-    {#each data.ranges as r}
-      <a class="seg-item" class:on={r === data.days} href="?range={r}">
-        {r === 7 ? 'W' : r === 30 ? 'M' : r === 90 ? '3M' : 'Y'}
+    {#each data.views as v}
+      <a class="seg-item" class:on={v === data.view} href="?view={v}">
+        {v === 'week' ? 'W' : v === 'month' ? 'M' : v === 'quarter' ? '3M' : 'Y'}
       </a>
     {/each}
   </div>
@@ -79,15 +90,16 @@
   </div>
 
   <div class="card chartcard">
-    <OverlayChart dates={data.dates} {lines} height={300} />
+    <OverlayChart dates={data.dates} {lines} granularity={data.granularity} height={300} />
 
     {#if lines.length > 0}
       <div class="legend">
         {#each lines as l (l.id)}
+          {@const a = avg(l.values)}
           <span class="leg">
             <i style="background: {l.color}"></i>
             <span class="leg-nm">{l.name}</span>
-            <em>avg {fmt(avg(l.values), l.unit)} {l.unit}</em>
+            <em>{a > 0 ? `avg ${fmt(a, l.unit)} ${l.unit}` : 'no data'}</em>
           </span>
         {/each}
       </div>
@@ -104,6 +116,32 @@
     border-bottom: 1px solid var(--line);
     background: #fff;
     flex: none;
+  }
+  .navrow {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .arw {
+    width: 28px;
+    height: 28px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    display: grid;
+    place-items: center;
+    color: var(--muted);
+    font-size: 15px;
+  }
+  .arw:hover {
+    background: var(--fill);
+  }
+  .arw.disabled {
+    opacity: 0.35;
+    cursor: default;
+  }
+  .date-t {
+    min-width: 130px;
+    text-align: center;
   }
   .date-t h2 {
     font-size: 16px;

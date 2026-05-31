@@ -22,6 +22,13 @@
       "when": 1780234346636,
       "tag": "0002_harsh_longshot",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1780243844862,
+      "tag": "0003_third_ben_parker",
+      "breakpoints": true
     }
   ]
 }

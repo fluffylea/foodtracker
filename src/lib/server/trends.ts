@@ -1,7 +1,7 @@
 import { and, eq, gte, lte } from 'drizzle-orm';
 import { db } from './db/index';
 import { diaryEntries, foodNutrients, foodUnits } from './db/schema';
-import { enumerateDays } from '$lib/date';
+import { enumerateDays, startOfWeek } from '$lib/date';
 
 export type RangeTotals = {
   dates: string[];
@@ -45,4 +45,42 @@ export function rangeTotals(userId: number, from: string, to: string): RangeTota
   }
 
   return { dates, series };
+}
+
+/**
+ * Collapse a daily series into one point per week (for the year view, where
+ * 365 daily points are too noisy). Each week's value is the average over its
+ * *logged* days (value > 0), so untracked days don't drag it down; a week with
+ * no data stays 0 (treated as a gap by the chart).
+ */
+export function aggregateWeekly(
+  daily: RangeTotals,
+  weekStart: number
+): RangeTotals {
+  // Map each day index → its week-start date, preserving first-seen order.
+  const weekOf = daily.dates.map((d) => startOfWeek(d, weekStart));
+  const weekDates: string[] = [];
+  const weekIndex = new Map<string, number>();
+  for (const w of weekOf) {
+    if (!weekIndex.has(w)) {
+      weekIndex.set(w, weekDates.length);
+      weekDates.push(w);
+    }
+  }
+
+  const series: Record<number, number[]> = {};
+  for (const [nidStr, values] of Object.entries(daily.series)) {
+    const nid = Number(nidStr);
+    const sums = new Array(weekDates.length).fill(0);
+    const counts = new Array(weekDates.length).fill(0);
+    values.forEach((v, i) => {
+      if (v <= 0) return; // only logged days contribute
+      const wi = weekIndex.get(weekOf[i])!;
+      sums[wi] += v;
+      counts[wi] += 1;
+    });
+    series[nid] = sums.map((s, i) => (counts[i] > 0 ? s / counts[i] : 0));
+  }
+
+  return { dates: weekDates, series };
 }

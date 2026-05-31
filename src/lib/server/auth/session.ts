@@ -47,7 +47,8 @@ export function validateToken(
         name: users.name,
         isAdmin: users.isAdmin,
         energyUnit: users.energyUnit,
-        timezone: users.timezone
+        timezone: users.timezone,
+        weekStart: users.weekStart
       }
     })
     .from(sessions)

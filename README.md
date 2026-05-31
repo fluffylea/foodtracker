@@ -12,8 +12,10 @@ See [DESIGN.md](DESIGN.md) for the full design and roadmap.
 > per-meal sections with subtotals; meals are added/removed effective today (past
 > days keep theirs, like goals), with a default "Log" bucket and today-only
 > management (m7), and a Trends view — an overlay line chart of nutrient totals
-> over a selectable range (week/month/3M/year) with toggleable metric chips, each
-> normalized to its own range so different scales overlay (m8).
+> over calendar-snapped periods (week/month/quarter/year) with prev/next
+> navigation, a hover cursor + per-metric tooltip, and toggleable metric chips,
+> each normalized to its own range so different scales overlay (m8). A per-user
+> week-start setting (Sun/Mon) lives in Settings.
 
 ## Stack
 

@@ -1,0 +1,1 @@
+ALTER TABLE `users` ADD `week_start` integer DEFAULT 1 NOT NULL;
