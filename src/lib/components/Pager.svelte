@@ -23,6 +23,7 @@
     key,
     hasPrev = true,
     hasNext = true,
+    enabled = true,
     oncommit,
     prev,
     current,
@@ -33,6 +34,9 @@
     key: string | number;
     hasPrev?: boolean;
     hasNext?: boolean;
+    /** Gate the *pointer* gesture (programmatic `go()` always works). Used to
+     *  keep mouse-drag from paging where hover means something (Trends chart). */
+    enabled?: boolean;
     oncommit: (dir: 'prev' | 'next') => void;
     prev?: Snippet;
     current: Snippet;
@@ -73,7 +77,7 @@
   }
 
   function onDown(e: PointerEvent) {
-    if (committing || pointerId !== -1 || overlayOpen()) return;
+    if (!enabled || committing || pointerId !== -1 || overlayOpen()) return;
     if (e.pointerType === 'mouse' && e.button !== 0) return;
     pointerId = e.pointerId;
     startX = lastX = e.clientX;

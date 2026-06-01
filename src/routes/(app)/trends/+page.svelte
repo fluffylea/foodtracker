@@ -1,8 +1,11 @@
 <script lang="ts">
-  import { goto } from '$app/navigation';
-  import OverlayChart from '$lib/components/OverlayChart.svelte';
+  import { goto, preloadData } from '$app/navigation';
+  import Pager from '$lib/components/Pager.svelte';
+  import TrendChart from '$lib/components/TrendChart.svelte';
+  import { coarsePointer } from '$lib/pointer.svelte';
+  import type { PageData } from './$types';
 
-  let { data } = $props();
+  let { data }: { data: PageData } = $props();
 
   const viewLabel = { week: 'Week', month: 'Month', quarter: 'Quarter', year: 'Year' };
 
@@ -21,7 +24,8 @@
     new Map(data.catalog.map((n, i) => [n.id, PALETTE[i % PALETTE.length]]))
   );
 
-  // Which nutrients are plotted (client-side toggle). Default: energy + protein.
+  // Which nutrients are plotted (client-side toggle, shared across pager panes).
+  // Default: energy + protein.
   const defaultSelected = $derived(
     new Set(data.catalog.filter((n) => n.key === 'energy' || n.key === 'protein').map((n) => n.id))
   );
@@ -37,26 +41,37 @@
     touched = true;
   }
 
-  const zeros = $derived(data.dates.map(() => 0));
-  const lines = $derived(
-    data.catalog
-      .filter((n) => active.has(n.id))
-      .map((n) => ({
-        id: n.id,
-        name: n.name,
-        unit: n.unit,
-        color: colorById.get(n.id) ?? '#888',
-        values: data.series[n.id] ?? zeros
-      }))
-  );
+  // --- period swipe-pager (touch: drag the chart to page prev/next period) ---
+  let pager = $state<{ go: (dir: 'prev' | 'next') => void }>();
+  let prevData = $state<PageData | null>(null);
+  let nextData = $state<PageData | null>(null);
 
-  function fmt(v: number, unit: string): string {
-    return unit === 'kcal' ? Math.round(v).toLocaleString() : String(Math.round(v * 10) / 10);
+  async function preload(href: string): Promise<PageData | null> {
+    const r = await preloadData(href);
+    return r.type === 'loaded' && r.status === 200 ? (r.data as PageData) : null;
   }
-  // Average over logged points only (value > 0); 0 means "no data" for that day.
-  function avg(values: number[]): number {
-    const v = values.filter((x) => x > 0);
-    return v.length ? v.reduce((s, x) => s + x, 0) / v.length : 0;
+
+  function periodHref(ref: string) {
+    return `/trends?view=${data.view}&ref=${ref}`;
+  }
+
+  $effect(() => {
+    const key = `${data.view}:${data.prevRef}`;
+    prevData = null;
+    nextData = null;
+    preload(periodHref(data.prevRef)).then((d) => key === `${data.view}:${data.prevRef}` && (prevData = d));
+    if (!data.atLatest) {
+      preload(periodHref(data.nextRef)).then(
+        (d) => key === `${data.view}:${data.prevRef}` && (nextData = d)
+      );
+    }
+  });
+
+  function commit(dir: 'prev' | 'next') {
+    goto(periodHref(dir === 'prev' ? data.prevRef : data.nextRef), {
+      noScroll: true,
+      keepFocus: true
+    });
   }
 </script>
 
@@ -64,7 +79,7 @@
 
 <header class="top">
   <div class="navrow">
-    <a class="arw" href="?view={data.view}&ref={data.prevRef}" aria-label="Previous period">‹</a>
+    <a class="arw" href={periodHref(data.prevRef)} aria-label="Previous period" onclick={(e) => { e.preventDefault(); pager?.go('prev'); }}>‹</a>
     <div class="date-t">
       <h2>{data.label}</h2>
       <div class="sub">{viewLabel[data.view]} · each metric to its own range</div>
@@ -72,7 +87,7 @@
     {#if data.atLatest}
       <span class="arw disabled" aria-hidden="true">›</span>
     {:else}
-      <a class="arw" href="?view={data.view}&ref={data.nextRef}" aria-label="Next period">›</a>
+      <a class="arw" href={periodHref(data.nextRef)} aria-label="Next period" onclick={(e) => { e.preventDefault(); pager?.go('next'); }}>›</a>
     {/if}
   </div>
   <div class="seg">
@@ -99,29 +114,56 @@
     {/each}
   </div>
 
-  <div class="card chartcard">
-    <OverlayChart
-      dates={data.dates}
-      {lines}
-      ticks={data.ticks}
-      granularity={data.granularity}
-      onpick={pick}
-      height={300}
-    />
-
-    {#if lines.length > 0}
-      <div class="legend">
-        {#each lines as l (l.id)}
-          {@const a = avg(l.values)}
-          <span class="leg">
-            <i style="background: {l.color}"></i>
-            <span class="leg-nm">{l.name}</span>
-            <em>{a > 0 ? `avg ${fmt(a, l.unit)} ${l.unit}` : 'no data'}</em>
-          </span>
-        {/each}
-      </div>
-    {/if}
-  </div>
+  <!-- Swipe (touch) pages prev/next period; on a fine pointer the gesture is off
+       (hover-scrub + arrows stay primary) but go() still animates the arrows. -->
+  <Pager
+    bind:this={pager}
+    enabled={coarsePointer()}
+    key={`${data.view}:${data.prevRef}`}
+    hasNext={!data.atLatest}
+    oncommit={commit}
+  >
+    {#snippet prev()}
+      {#if prevData}
+        <TrendChart
+          dates={prevData.dates}
+          series={prevData.series}
+          ticks={prevData.ticks}
+          granularity={prevData.granularity}
+          catalog={data.catalog}
+          {active}
+          {colorById}
+          interactive={false}
+        />
+      {/if}
+    {/snippet}
+    {#snippet current()}
+      <TrendChart
+        dates={data.dates}
+        series={data.series}
+        ticks={data.ticks}
+        granularity={data.granularity}
+        catalog={data.catalog}
+        {active}
+        {colorById}
+        onpick={pick}
+      />
+    {/snippet}
+    {#snippet next()}
+      {#if nextData}
+        <TrendChart
+          dates={nextData.dates}
+          series={nextData.series}
+          ticks={nextData.ticks}
+          granularity={nextData.granularity}
+          catalog={data.catalog}
+          {active}
+          {colorById}
+          interactive={false}
+        />
+      {/if}
+    {/snippet}
+  </Pager>
 </div>
 
 <style>
@@ -213,32 +255,5 @@
     color: #fff;
     background: var(--c);
     font-weight: 600;
-  }
-  .chartcard {
-    padding: 14px 15px;
-  }
-  .legend {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px 18px;
-    margin-top: 13px;
-  }
-  .leg {
-    display: flex;
-    align-items: center;
-    gap: 7px;
-    font-size: 12.5px;
-  }
-  .leg i {
-    width: 14px;
-    height: 3px;
-    border-radius: 2px;
-    flex: none;
-  }
-  .leg em {
-    font-style: normal;
-    color: var(--faint);
-    font-size: 11.5px;
-    font-variant-numeric: tabular-nums;
   }
 </style>

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { shortDayLabel, formatDayLabel, type AxisTick } from '$lib/date';
+  import { coarsePointer } from '$lib/pointer.svelte';
 
   type Line = { id: number; name: string; unit: string; color: string; values: number[] };
   let {
@@ -65,19 +66,103 @@
     return { solid, dashed, dot: pts.length === 1 ? { x: pts[0].x, y: pts[0].y } : null };
   }
 
-  // ---- hover cursor ----
+  // ---- read cursor ----
+  // Fine pointer (mouse): hover to read, click to open the day — unchanged.
+  // Coarse pointer (touch): the chart shares its surface with the swipe-pager, so
+  // we disambiguate by intent — a quick *tap* opens the day; a *press-and-hold*
+  // begins scrub-to-read (the tooltip follows the finger, release never opens);
+  // a horizontal *drag* (movement before the hold) is left for the pager to page.
   let plotEl: HTMLDivElement | undefined = $state();
   let hover = $state<number | null>(null);
 
   function onMove(e: PointerEvent) {
+    if (coarsePointer()) return; // coarse path is the down/hold/up logic below
     hover = indexFromX(e.clientX);
   }
   function onLeave() {
+    if (coarsePointer()) return;
     hover = null;
   }
   function onClick(e: MouseEvent) {
+    if (coarsePointer()) return;
     const i = indexFromX(e.clientX);
     if (i !== null) onpick?.(i);
+  }
+
+  // Coarse-pointer gesture arbitration.
+  const HOLD = 150; // ms still-press before scrub engages
+  const SLOP = 8; // px of travel that means "this is a swipe, not a tap/hold"
+  let pid = -1;
+  let startX = 0;
+  let startY = 0;
+  let lastX = 0;
+  let moved = false;
+  let scrubbing = false;
+  let holdT: ReturnType<typeof setTimeout> | null = null;
+
+  function onDown(e: PointerEvent) {
+    if (!coarsePointer()) return;
+    pid = e.pointerId;
+    startX = lastX = e.clientX;
+    startY = e.clientY;
+    moved = false;
+    scrubbing = false;
+    holdT = setTimeout(startScrub, HOLD);
+    window.addEventListener('pointermove', onWinMove, { passive: false });
+    window.addEventListener('pointerup', onWinUp);
+    window.addEventListener('pointercancel', onWinUp);
+  }
+
+  function startScrub() {
+    if (pid === -1 || moved) return;
+    scrubbing = true;
+    // Tell the pager to stand down for this gesture (it bails on this class).
+    document.body.classList.add('dragging-active');
+    try {
+      plotEl?.setPointerCapture(pid);
+    } catch {
+      /* pointer may already be gone */
+    }
+    hover = indexFromX(lastX);
+    navigator.vibrate?.(8);
+  }
+
+  function onWinMove(e: PointerEvent) {
+    if (e.pointerId !== pid) return;
+    lastX = e.clientX;
+    if (scrubbing) {
+      e.preventDefault();
+      hover = indexFromX(e.clientX);
+      return;
+    }
+    if (Math.hypot(e.clientX - startX, e.clientY - startY) > SLOP) {
+      moved = true; // a swipe (or scroll) — abandon scrub/tap, let the pager have it
+      clearHold();
+    }
+  }
+
+  function onWinUp(e: PointerEvent) {
+    if (e.pointerId !== pid) return;
+    clearHold();
+    if (scrubbing) {
+      hover = null; // release ends the read; never navigates
+    } else if (!moved) {
+      const i = indexFromX(e.clientX);
+      if (i !== null) onpick?.(i); // a clean tap opens the day
+    }
+    document.body.classList.remove('dragging-active');
+    window.removeEventListener('pointermove', onWinMove);
+    window.removeEventListener('pointerup', onWinUp);
+    window.removeEventListener('pointercancel', onWinUp);
+    scrubbing = false;
+    pid = -1;
+  }
+
+  function clearHold() {
+    if (holdT !== null) {
+      clearTimeout(holdT);
+      holdT = null;
+    }
   }
 
   function fmt(v: number, unit: string): string {
@@ -107,6 +192,7 @@
     class="plot"
     class:clickable={onpick && lines.length > 0}
     bind:this={plotEl}
+    onpointerdown={onDown}
     onpointermove={onMove}
     onpointerleave={onLeave}
     onclick={onClick}
