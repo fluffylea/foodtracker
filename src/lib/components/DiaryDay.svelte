@@ -6,6 +6,7 @@
   import GoalModal from '$lib/components/GoalModal.svelte';
   import Sheet from '$lib/components/Sheet.svelte';
   import { createReorder } from '$lib/gestures/reorder.svelte';
+  import { portal } from '$lib/actions/portal';
   import { flipDuration } from '$lib/motion';
   import { flip } from 'svelte/animate';
   import { invalidateAll } from '$app/navigation';
@@ -208,6 +209,11 @@
   });
   const reorderItem = reorder.reorderItem;
 
+  // FLIP should animate the reorder shuffle only — not day navigation. On a day
+  // swipe the keyed tiles measure a one-pane-width position delta and would
+  // flicker; gating to an active drag keeps navigation snappy.
+  const flipDur = $derived(reorder.draggingKind ? flipDuration() : 0);
+
   function arrowNav(e: MouseEvent, cb?: () => void) {
     if (cb) {
       e.preventDefault();
@@ -248,7 +254,7 @@
           data-reorder-group="0"
           data-reorder-id={t.nid}
           use:reorderItem={{ kind: 'goal', group: 0, id: t.nid, disabled: !editGM }}
-          animate:flip={{ duration: flipDuration() }}
+          animate:flip={{ duration: flipDur }}
         >
           <GoalTile
             name={t.n.name}
@@ -281,7 +287,7 @@
       data-reorder-group="0"
       data-reorder-id={mid}
       use:reorderItem={{ kind: 'meal', group: 0, id: mid, disabled: !editGM, handle: '.grip' }}
-      animate:flip={{ duration: flipDuration() }}
+      animate:flip={{ duration: flipDur }}
     >
       <div class="sec-h meal-head">
         {#if editGM}
@@ -310,7 +316,7 @@
                 data-reorder-group={mid}
                 data-reorder-id={e.id}
                 use:reorderItem={{ kind: 'entry', group: mid, id: e.id, disabled: !interactive }}
-                animate:flip={{ duration: flipDuration() }}
+                animate:flip={{ duration: flipDur }}
                 onclick={() => openEdit(e)}
               >
                 {@render entryContent(e)}
@@ -373,7 +379,7 @@
 
 <!-- Floating quick-add (live pane only; mobile-only via CSS, thumb-reachable). -->
 {#if interactive}
-  <button class="fab" type="button" onclick={() => openAdd(null)} aria-label="Add food">
+  <button class="fab" type="button" use:portal onclick={() => openAdd(null)} aria-label="Add food">
     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round">
       <path d="M12 5v14M5 12h14" />
     </svg>

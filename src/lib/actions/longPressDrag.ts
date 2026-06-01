@@ -145,6 +145,10 @@ export const longPressDrag: Action<HTMLElement, LongPressDragOptions | undefined
     scroller = null;
     lastEvent = null;
     pointerId = -1;
+    // Reset gesture state here (the single exit point) so a completed drag can be
+    // started again — otherwise `lifted` stays true and the next press is ignored.
+    lifted = false;
+    pending = false;
   }
 
   function onPointerDown(e: PointerEvent) {

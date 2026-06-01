@@ -105,12 +105,17 @@ button {
    callout menu — that ambiguity is what made "drag" feel like "edit". Real text
    inputs (and anything tagged .selectable) opt back in. */
 @media (pointer: coarse) {
-  button,
-  a,
-  [role='button'] {
+  /* This is an app, not a document: incidental text selection (and the iOS
+     callout / native link-drag) only ever fights a gesture. Turn it all off on
+     touch; real inputs and anything tagged .selectable opt back in below. */
+  body {
     -webkit-user-select: none;
     user-select: none;
     -webkit-touch-callout: none;
+  }
+  a,
+  img {
+    -webkit-user-drag: none;
   }
 }
 input,
@@ -150,7 +155,11 @@ body.dragging-active {
    scoped) styling. It follows the finger via an inline transform; here we only
    give it the "picked up" look. Its inner scoped markup keeps its own styles. */
 .reorder-clone {
-  position: fixed;
+  /* !important: the cloned node keeps the dragged element's own (component-
+     scoped) class, whose `position: relative` is more specific than this rule —
+     without it the clone falls to the bottom of <body> instead of tracking the
+     finger. */
+  position: fixed !important;
   margin: 0 !important;
   z-index: 1000;
   pointer-events: none;
