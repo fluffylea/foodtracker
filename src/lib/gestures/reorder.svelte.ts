@@ -73,6 +73,10 @@ export function createReorder(opts: ReorderOptions) {
   let startY = 0;
   let baseLeft = 0; // clone's fixed origin (viewport px) at lift
   let baseTop = 0;
+  // The pager renders prev/current/next panes with duplicate data-reorder-ids, so
+  // the drop-target lookup must be scoped to the pane the drag began in —
+  // otherwise the clone flies to an off-screen neighbour's identical item.
+  let scopeEl: ParentNode = document;
 
   const axis = (kind: string): 'x' | 'y' => (opts.axisFor ? opts.axisFor(kind) : 'y');
 
@@ -85,6 +89,7 @@ export function createReorder(opts: ReorderOptions) {
   function lift(node: HTMLElement, kind: string, _group: number | string, id: number, e: PointerEvent) {
     dragId = id;
     dragKind = kind;
+    scopeEl = node.closest('[data-reorder-scope]') ?? document;
     const rect = node.getBoundingClientRect();
     baseLeft = rect.left;
     baseTop = rect.top;
@@ -152,7 +157,8 @@ export function createReorder(opts: ReorderOptions) {
       return;
     }
     // Fly the clone to the item's final resting slot (it may have changed group).
-    const dest = document.querySelector(
+    // Scoped to the drag's own pane so it doesn't target a neighbour's duplicate.
+    const dest = scopeEl.querySelector(
       `[data-reorder-kind="${kind}"][data-reorder-id="${id}"]`
     ) as HTMLElement | null;
     if (clone && dest && !reducedMotion()) {
@@ -170,6 +176,7 @@ export function createReorder(opts: ReorderOptions) {
     clone = null;
     dragId = null;
     dragKind = null;
+    scopeEl = document;
   }
 
   function reorderItem(node: HTMLElement, params: ReorderItemParams) {

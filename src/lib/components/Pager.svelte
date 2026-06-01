@@ -98,11 +98,13 @@
     const dy = e.clientY - startY;
 
     if (!decided) {
-      if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
+      // Wait for enough travel to judge the angle, then commit once.
+      if (Math.abs(dx) < 10 && Math.abs(dy) < 10) return;
       decided = true;
-      // Claim only a clearly-horizontal gesture, and never while a reorder drag
-      // owns the pointer (it sets body.dragging-active).
-      if (Math.abs(dx) > Math.abs(dy) && !document.body.classList.contains('dragging-active')) {
+      // Claim only a *clearly* horizontal gesture (a 45° drag should scroll, not
+      // page), and never while a reorder drag owns the pointer (dragging-active).
+      const clearlyHorizontal = Math.abs(dx) > Math.abs(dy) * 1.3;
+      if (clearlyHorizontal && !document.body.classList.contains('dragging-active')) {
         owning = true;
         try {
           root.setPointerCapture(e.pointerId);
@@ -110,7 +112,7 @@
           /* pointer may already be gone */
         }
       } else {
-        release(); // vertical scroll or reorder — bow out, let the browser have it
+        release(); // vertical/diagonal scroll or reorder — let the browser have it
         return;
       }
     }

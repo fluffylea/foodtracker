@@ -35,8 +35,12 @@
   // Goals/meals are managed "now": editable only on today, and only on the live
   // (interactive) pane — never on a preview.
   const isToday = $derived(data.date === data.today);
+  // `editGM` gates the actual goal/meal *mutation* (live pane + today only).
+  // Visual affordances (grips, ⋯, add buttons, header text) key off `isToday`
+  // alone, so a today *preview* pane already looks live — committing a swipe to
+  // today then doesn't pop new controls into existence.
   const editGM = $derived(interactive && isToday);
-  const canAddGoal = $derived(editGM && data.goals.length < data.catalog.length);
+  const canAddGoal = $derived(isToday && data.goals.length < data.catalog.length);
 
   // --- entry add/edit modal ---
   type Editing = {
@@ -118,6 +122,7 @@
   let menuMeal = $state<{ id: number; name: string } | null>(null);
   let menuMode = $state<'menu' | 'rename' | 'confirm'>('menu');
   function openMealMenu(id: number, name: string) {
+    if (!interactive) return;
     menuMeal = { id, name };
     menuMode = 'menu';
   }
@@ -130,7 +135,7 @@
   let goalModal = $state<{ editing: GoalEditing | null } | null>(null);
   const goalModalKey = $derived(goalModal?.editing ? `g${goalModal.editing.nutrientId}` : 'gnew');
   function openAddGoal() {
-    goalModal = { editing: null };
+    if (interactive) goalModal = { editing: null };
   }
   function openEditGoal(g: (typeof data.goals)[number]) {
     goalModal = { editing: { nutrientId: g.nutrientId, min: g.targetMin, max: g.targetMax } };
@@ -233,10 +238,10 @@
   </div>
 </header>
 
-<div class="body">
+<div class="body" data-reorder-scope>
   <div class="sec-h">
     <span>Goals</span>
-    {#if editGM}
+    {#if isToday}
       {#if canAddGoal}<button class="link-btn" type="button" onclick={openAddGoal}>+ Add goal</button>{/if}
     {:else}
       <span class="mut">viewing {data.date} · edit goals on today</span>
@@ -290,12 +295,12 @@
       animate:flip={{ duration: flipDur }}
     >
       <div class="sec-h meal-head">
-        {#if editGM}
+        {#if isToday}
           <span class="grip" title="Drag to reorder" aria-label="Drag to reorder meal">⠿</span>
         {/if}
         <span class="meal-name plain">{meal.name}</span>
         <span class="meal-sum">{Math.round(subtotalIds(ids)).toLocaleString()} kcal</span>
-        {#if editGM}
+        {#if isToday}
           <button
             class="meal-menu-btn"
             type="button"
@@ -324,9 +329,7 @@
             {/each}
           </div>
         {/if}
-        {#if interactive}
-          <button class="add-row" type="button" onclick={() => openAdd(mid)}>+ Add food</button>
-        {/if}
+        <button class="add-row" type="button" onclick={() => openAdd(mid)}>+ Add food</button>
       </div>
     </section>
   {/each}
@@ -348,7 +351,7 @@
   {/if}
 
   <!-- New meal (today only). -->
-  {#if editGM}
+  {#if isToday}
     {#if addingMeal}
       <form
         method="POST"
