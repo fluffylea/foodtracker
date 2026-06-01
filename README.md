@@ -27,12 +27,23 @@ See [DESIGN.md](DESIGN.md) for the full design and roadmap.
 
 ```sh
 npm install
-cp .env.example .env      # adjust ADMIN_EMAIL / ADMIN_PASSWORD
+cp .env.example .env      # set BETTER_AUTH_SECRET + OIDC_* (Authentik)
 npm run dev               # migrations + seed run automatically on first request
 ```
 
 Open http://localhost:5173. Migrations also run via `npm run db:migrate`, and new
 schema changes are generated with `npm run db:generate`.
+
+## Authentication
+
+Auth is **SSO-only** via a self-hosted [Authentik](https://goauthentik.io) (OIDC),
+handled by [Better Auth](https://www.better-auth.com). There is no local
+email/password login. Accounts are **auto-provisioned** on first successful SSO
+login, so *who* can sign in is controlled in Authentik (bind the application to a
+group). Configure `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, and the `OIDC_*` vars,
+and register `<BETTER_AUTH_URL>/api/auth/oauth2/callback/authentik` as the redirect
+URI in Authentik. (Admin/user-management is deferred — every account is a plain
+user for now.)
 
 ## Production
 
@@ -41,8 +52,9 @@ docker compose up -d --build
 ```
 
 The app listens on `:3000` and stores its database in the `plate-data` volume
-(`/data/plate.db`). On first boot it creates the admin account from
-`ADMIN_EMAIL` / `ADMIN_PASSWORD`. Back up by copying `plate.db` from the volume.
+(`/data/plate.db`). Set `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL` (the public https
+origin), and the `OIDC_*` vars in the environment. Back up by copying `plate.db`
+from the volume.
 
 ## Project layout
 
@@ -51,7 +63,7 @@ src/
   lib/
     server/
       db/          schema.ts, index.ts (client), migrate.ts, seed.ts
-      auth/        password.ts (scrypt) — sessions land in milestone 2
+      auth/        index.ts — Better Auth (Authentik OIDC, SSO-only)
       food-sources/  (milestone 6: Open Food Facts)
     components/   shared UI
     date.ts       calendar-day helpers

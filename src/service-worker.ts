@@ -13,7 +13,10 @@
 import { build, files, version } from '$service-worker';
 
 const sw = self as unknown as ServiceWorkerGlobalScope;
-const CACHE = `plate-${version}`;
+// Cache name carries a manual epoch alongside the build version so we can force
+// a purge of stale entries (e.g. pages cached before responses declared their
+// charset) independently of a content-hash change. Bump on such fixes.
+const CACHE = `plate-${version}-2`;
 // Immutable, content-hashed app assets + static files (icons, manifest).
 const PRECACHE = [...build, ...files];
 

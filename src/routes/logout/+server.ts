@@ -1,10 +1,9 @@
 import { redirect } from '@sveltejs/kit';
-import { SESSION_COOKIE, invalidateToken, clearSessionCookie } from '$lib/server/auth/session';
+import { auth } from '$lib/server/auth';
 import type { RequestHandler } from './$types';
 
-export const POST: RequestHandler = ({ cookies }) => {
-  const token = cookies.get(SESSION_COOKIE);
-  if (token) invalidateToken(token);
-  clearSessionCookie(cookies);
+export const POST: RequestHandler = async ({ request }) => {
+  // Clears the Better Auth session + cookie (propagated via the sveltekitCookies plugin).
+  await auth.api.signOut({ headers: request.headers });
   redirect(303, '/login');
 };

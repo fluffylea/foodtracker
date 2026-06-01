@@ -18,27 +18,65 @@ const now = sql`(unixepoch())`;
 // Users & sessions
 // ---------------------------------------------------------------------------
 
+// Auth is owned by Better Auth (SSO-only via Authentik OIDC). The four tables
+// below follow Better Auth's canonical schema; `generateId: 'serial'` keeps
+// integer auto-increment ids so existing FKs (foods/diary/goals) are unchanged.
+// `is_admin` + the preference columns are Better Auth `additionalFields` the
+// app manages directly; auth credentials live in `accounts`, not here.
 export const users = sqliteTable('users', {
   id: integer('id').primaryKey({ autoIncrement: true }),
-  email: text('email').notNull().unique(),
   name: text('name').notNull(),
-  passwordHash: text('password_hash').notNull(),
+  email: text('email').notNull().unique(),
+  emailVerified: integer('email_verified', { mode: 'boolean' }).notNull().default(false),
+  image: text('image'),
   isAdmin: integer('is_admin', { mode: 'boolean' }).notNull().default(false),
   // Per-user preferences (DESIGN.md §2).
   energyUnit: text('energy_unit', { enum: ['kcal', 'kj'] }).notNull().default('kcal'),
   timezone: text('timezone').notNull().default('UTC'),
   // First day of the week for the Trends week view: 0 = Sunday, 1 = Monday.
   weekStart: integer('week_start').notNull().default(1),
-  createdAt: integer('created_at').notNull().default(now)
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull()
 });
 
 export const sessions = sqliteTable('sessions', {
-  // Session token id (opaque, stored hashed — see auth layer, later milestone).
-  id: text('id').primaryKey(),
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  token: text('token').notNull().unique(),
   userId: integer('user_id')
     .notNull()
     .references(() => users.id, { onDelete: 'cascade' }),
-  expiresAt: integer('expires_at').notNull()
+  expiresAt: integer('expires_at', { mode: 'timestamp' }).notNull(),
+  ipAddress: text('ip_address'),
+  userAgent: text('user_agent'),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull()
+});
+
+export const accounts = sqliteTable('accounts', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  userId: integer('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  accountId: text('account_id').notNull(),
+  providerId: text('provider_id').notNull(),
+  accessToken: text('access_token'),
+  refreshToken: text('refresh_token'),
+  idToken: text('id_token'),
+  accessTokenExpiresAt: integer('access_token_expires_at', { mode: 'timestamp' }),
+  refreshTokenExpiresAt: integer('refresh_token_expires_at', { mode: 'timestamp' }),
+  scope: text('scope'),
+  password: text('password'),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull()
+});
+
+export const verifications = sqliteTable('verifications', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  identifier: text('identifier').notNull(),
+  value: text('value').notNull(),
+  expiresAt: integer('expires_at', { mode: 'timestamp' }).notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull()
 });
 
 // ---------------------------------------------------------------------------

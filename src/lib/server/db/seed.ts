@@ -1,8 +1,7 @@
 import { db } from './index';
-import { nutrients, users, diaryEntries } from './schema';
-import { hashPassword } from '../auth/password';
+import { nutrients, diaryEntries } from './schema';
 import { findOrCreateLogMeal } from '../mealgroups';
-import { eq, and, isNull, sql } from 'drizzle-orm';
+import { eq, and, isNull } from 'drizzle-orm';
 
 /** Default nutrient catalog (DESIGN.md §3). `key` is the stable machine id. */
 export const DEFAULT_NUTRIENTS: { key: string; name: string; unit: string }[] = [
@@ -17,7 +16,11 @@ export const DEFAULT_NUTRIENTS: { key: string; name: string; unit: string }[] = 
   { key: 'salt', name: 'Salt', unit: 'g' }
 ];
 
-/** Idempotent seed: nutrient catalog + a single admin user if none exists. */
+/**
+ * Idempotent seed: nutrient catalog + a one-time meal backfill. User accounts
+ * are auto-provisioned by Better Auth on first Authentik SSO login, so there is
+ * no admin user to seed here.
+ */
 export async function seed() {
   // Nutrient catalog — insert any missing keys, preserve existing ids.
   DEFAULT_NUTRIENTS.forEach((n, i) => {
@@ -26,18 +29,6 @@ export async function seed() {
       .onConflictDoNothing({ target: nutrients.key })
       .run();
   });
-
-  // Seed admin only when there are no users at all.
-  const [{ count }] = db.select({ count: sql<number>`count(*)` }).from(users).all();
-  if (count === 0) {
-    const email = process.env.ADMIN_EMAIL ?? 'admin@example.com';
-    const password = process.env.ADMIN_PASSWORD ?? 'change-me';
-    const passwordHash = await hashPassword(password);
-    db.insert(users)
-      .values({ email, name: 'Admin', passwordHash, isAdmin: true })
-      .run();
-    console.log(`[seed] created admin user: ${email}`);
-  }
 
   // One-time: move legacy un-mealed entries into each user's 'Log' meal, so
   // every entry belongs to a real meal. Idempotent (no nulls remain after).

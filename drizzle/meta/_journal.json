@@ -5,29 +5,8 @@
     {
       "idx": 0,
       "version": "6",
-      "when": 1780145856100,
-      "tag": "0000_tranquil_leper_queen",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "6",
-      "when": 1780223425238,
-      "tag": "0001_daily_night_nurse",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "6",
-      "when": 1780234346636,
-      "tag": "0002_harsh_longshot",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "6",
-      "when": 1780243844862,
-      "tag": "0003_third_ben_parker",
+      "when": 1780348263059,
+      "tag": "0000_unusual_toro",
       "breakpoints": true
     }
   ]

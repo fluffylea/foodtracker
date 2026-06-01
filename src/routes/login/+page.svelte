@@ -1,33 +1,46 @@
 <script lang="ts">
-  import { enhance } from '$app/forms';
-  let { form } = $props();
+  import { page } from '$app/stores';
+  import { authClient } from '$lib/auth-client';
+
+  // Only allow same-origin internal paths as post-login targets.
+  function safeRedirect(target: string | null): string {
+    if (target && target.startsWith('/') && !target.startsWith('//')) return target;
+    return '/';
+  }
+
+  let loading = $state(false);
+  // Better Auth surfaces OAuth failures as an `error` query param on return.
+  let error = $derived($page.url.searchParams.get('error'));
+
+  async function signIn() {
+    loading = true;
+    const { error: err } = await authClient.signIn.oauth2({
+      providerId: 'authentik',
+      callbackURL: safeRedirect($page.url.searchParams.get('redirectTo'))
+    });
+    // On success the browser is redirected to Authentik; we only land here on error.
+    if (err) loading = false;
+  }
 </script>
 
 <svelte:head><title>Plate · Sign in</title></svelte:head>
 
 <div class="wrap">
-  <form class="card" method="POST" use:enhance>
+  <div class="card">
     <div class="brand">
       <span class="logo"></span>
       <b>Plate</b>
     </div>
-    <p class="lede">Sign in to your tracker.</p>
+    <p class="lede">Sign in with your Authentik account.</p>
 
-    {#if form?.error}
-      <div class="err">{form.error}</div>
+    {#if error}
+      <div class="err">Sign-in failed. Please try again or contact your administrator.</div>
     {/if}
 
-    <label class="field">
-      <span>Email</span>
-      <input name="email" type="email" autocomplete="username" value={form?.email ?? ''} required />
-    </label>
-    <label class="field">
-      <span>Password</span>
-      <input name="password" type="password" autocomplete="current-password" required />
-    </label>
-
-    <button class="cta" type="submit">Sign in</button>
-  </form>
+    <button class="cta" type="button" onclick={signIn} disabled={loading}>
+      {loading ? 'Redirecting…' : 'Sign in with Authentik'}
+    </button>
+  </div>
 </div>
 
 <style>
@@ -78,32 +91,6 @@
     border-radius: 9px;
     margin-bottom: 14px;
   }
-  .field {
-    display: flex;
-    flex-direction: column;
-    gap: 5px;
-    margin-bottom: 13px;
-  }
-  .field span {
-    font-size: 10.5px;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    color: var(--muted);
-    font-weight: 600;
-  }
-  .field input {
-    border: 1px solid var(--line);
-    border-radius: 9px;
-    padding: 9px 11px;
-    font-size: 14px;
-    background: #fff;
-    color: var(--ink);
-  }
-  .field input:focus {
-    outline: none;
-    border-color: var(--accent);
-    box-shadow: 0 0 0 3px var(--accent-soft);
-  }
   .cta {
     width: 100%;
     margin-top: 4px;
@@ -118,5 +105,9 @@
   }
   .cta:hover {
     background: var(--accent-ink);
+  }
+  .cta:disabled {
+    opacity: 0.6;
+    cursor: default;
   }
 </style>
