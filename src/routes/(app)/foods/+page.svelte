@@ -1,9 +1,16 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
+  import { fade, fly } from 'svelte/transition';
+  import { cubicOut } from 'svelte/easing';
   import { modal } from '$lib/actions/modal';
+  import { coarsePointer } from '$lib/pointer.svelte';
+  import { reducedMotion } from '$lib/motion';
   import FoodEditor from '$lib/components/FoodEditor.svelte';
 
   let { data, form } = $props();
+
+  const dur = $derived(reducedMotion() ? 0 : 240);
+  const flyY = $derived(reducedMotion() ? 0 : coarsePointer() ? 320 : 12);
 
   let filter = $state('');
   const shown = $derived(
@@ -61,8 +68,13 @@
 
 {#if showEditor}
   <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-  <div class="backdrop" onclick={close}>
-    <div class="modal" use:modal={{ onclose: close }} onclick={(e) => e.stopPropagation()}>
+  <div class="backdrop" onclick={close} transition:fade={{ duration: dur }}>
+    <div
+      class="modal"
+      use:modal={{ onclose: close }}
+      onclick={(e) => e.stopPropagation()}
+      transition:fly={{ y: flyY, duration: dur, easing: cubicOut }}
+    >
       <button class="modal-x" type="button" onclick={close} aria-label="Close">✕</button>
       <div class="modal-scroll">
         {#key editorKey}

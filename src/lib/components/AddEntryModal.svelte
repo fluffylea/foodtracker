@@ -1,7 +1,11 @@
 <script lang="ts">
   import { untrack } from 'svelte';
   import { enhance } from '$app/forms';
+  import { fade, fly } from 'svelte/transition';
+  import { cubicOut } from 'svelte/easing';
   import { modal } from '$lib/actions/modal';
+  import { coarsePointer } from '$lib/pointer.svelte';
+  import { reducedMotion } from '$lib/motion';
   import type { PickerFood } from '$lib/server/foods';
   import type { Nutrient, MealGroup } from '$lib/server/db/schema';
 
@@ -184,11 +188,19 @@
   function onResult(result: { type: string }) {
     if (result.type === 'success') onclose();
   }
+
+  const dur = $derived(reducedMotion() ? 0 : 240);
+  const flyY = $derived(reducedMotion() ? 0 : coarsePointer() ? 320 : 12);
 </script>
 
 <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-<div class="backdrop" onclick={onclose}>
-  <div class="modal" use:modal={{ onclose }} onclick={(e) => e.stopPropagation()}>
+<div class="backdrop" onclick={onclose} transition:fade={{ duration: dur }}>
+  <div
+    class="modal"
+    use:modal={{ onclose }}
+    onclick={(e) => e.stopPropagation()}
+    transition:fly={{ y: flyY, duration: dur, easing: cubicOut }}
+  >
     <div class="mhead">
       <b>{editing ? 'Edit entry' : 'Add food'}</b>
       <button class="x" onclick={onclose} aria-label="Close">✕</button>

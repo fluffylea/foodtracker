@@ -4,6 +4,7 @@
   import AddEntryModal from '$lib/components/AddEntryModal.svelte';
   import GoalTile from '$lib/components/GoalTile.svelte';
   import GoalModal from '$lib/components/GoalModal.svelte';
+  import Sheet from '$lib/components/Sheet.svelte';
   import { createReorder } from '$lib/gestures/reorder.svelte';
   import { flipDuration } from '$lib/motion';
   import { flip } from 'svelte/animate';
@@ -108,6 +109,20 @@
 
   let addingMeal = $state(false);
   let newMealName = $state('');
+
+  // --- meal options menu (rename / delete) ---
+  // Replaces the always-live name <input> + bare ✕ (the cascading-modal trap and
+  // the accidental-rename/delete-on-tap problem). Name is plain text; structural
+  // edits are deliberate, behind a ⋯ menu that goes through the overlay manager.
+  let menuMeal = $state<{ id: number; name: string } | null>(null);
+  let menuMode = $state<'menu' | 'rename' | 'confirm'>('menu');
+  function openMealMenu(id: number, name: string) {
+    menuMeal = { id, name };
+    menuMode = 'menu';
+  }
+  function closeMealMenu() {
+    menuMeal = null;
+  }
 
   // --- goal add/edit modal ---
   type GoalEditing = { nutrientId: number; min: number | null; max: number | null };
@@ -272,26 +287,15 @@
         {#if editGM}
           <span class="grip" title="Drag to reorder" aria-label="Drag to reorder meal">⠿</span>
         {/if}
-        {#if editGM}
-          <form method="POST" action="?/renameMeal" use:enhance class="meal-name-form">
-            <input type="hidden" name="id" value={mid} />
-            <input
-              class="meal-name"
-              name="name"
-              value={meal.name}
-              onchange={(e) => e.currentTarget.form?.requestSubmit()}
-              aria-label="Meal name"
-            />
-          </form>
-        {:else}
-          <span class="meal-name plain">{meal.name}</span>
-        {/if}
+        <span class="meal-name plain">{meal.name}</span>
         <span class="meal-sum">{Math.round(subtotalIds(ids)).toLocaleString()} kcal</span>
-        {#if editGM && mealOrder.length > 1}
-          <form method="POST" action="?/removeMeal" use:enhance class="meal-del-form">
-            <input type="hidden" name="id" value={mid} />
-            <button class="meal-del" type="submit" title="Remove meal" aria-label="Remove meal">✕</button>
-          </form>
+        {#if editGM}
+          <button
+            class="meal-menu-btn"
+            type="button"
+            onclick={() => openMealMenu(mid, meal.name)}
+            aria-label="Meal options"
+          >⋯</button>
         {/if}
       </div>
       <div class="log-zone" data-reorder-zone="entry" data-reorder-group={mid}>
@@ -398,6 +402,59 @@
       onclose={() => (goalModal = null)}
     />
   {/key}
+{/if}
+
+{#if interactive && menuMeal}
+  {@const m = menuMeal}
+  <Sheet
+    title={menuMode === 'rename' ? 'Rename meal' : menuMode === 'confirm' ? 'Delete meal' : m.name}
+    maxWidth={360}
+    onclose={closeMealMenu}
+  >
+    {#if menuMode === 'menu'}
+      <div class="menu-list">
+        <button class="menu-item" type="button" onclick={() => (menuMode = 'rename')}>Rename</button>
+        {#if mealOrder.length > 1}
+          <button class="menu-item danger" type="button" onclick={() => (menuMode = 'confirm')}>
+            Delete meal
+          </button>
+        {/if}
+      </div>
+    {:else if menuMode === 'rename'}
+      <form
+        method="POST"
+        action="?/renameMeal"
+        use:enhance={() => async ({ result, update }) => {
+          await update({ reset: false });
+          if (result.type === 'success') closeMealMenu();
+        }}
+      >
+        <input type="hidden" name="id" value={m.id} />
+        <!-- svelte-ignore a11y_autofocus -->
+        <input class="sheet-input" name="name" value={m.name} aria-label="Meal name" autofocus />
+        <div class="sheet-actions">
+          <button class="cta" type="submit">Save</button>
+          <button class="ghost" type="button" onclick={() => (menuMode = 'menu')}>Cancel</button>
+        </div>
+      </form>
+    {:else}
+      <p class="confirm-text">Delete “{m.name}”? Its entries move to Unsorted.</p>
+      <form
+        method="POST"
+        action="?/removeMeal"
+        use:enhance={() => async ({ result, update }) => {
+          await update();
+          if (result.type === 'success') closeMealMenu();
+        }}
+      >
+        <input type="hidden" name="id" value={m.id} />
+        <div class="sheet-actions">
+          <button class="danger-btn" type="submit">Delete</button>
+          <button class="ghost" type="button" onclick={() => (menuMode = 'menu')}>Cancel</button>
+        </div>
+      </form>
+    {/if}
+  </Sheet>
 {/if}
 
 <style>
@@ -621,37 +678,18 @@
   .log-zone {
     display: block;
   }
-  .meal-name-form {
-    margin: 0;
+  /* The meal name reads like the .sec-h label — now always plain text. */
+  .meal-name.plain {
     flex: 1;
     min-width: 0;
-  }
-  /* The meal name is styled to read like the .sec-h label. */
-  .meal-name {
-    width: 100%;
-    border: 1px solid transparent;
-    border-radius: 6px;
-    background: transparent;
-    font: inherit;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     font-size: 12px;
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.07em;
     color: var(--muted);
-    padding: 3px 5px;
-    margin-left: -5px;
-  }
-  .meal-name:hover {
-    border-color: var(--line);
-  }
-  .meal-name:focus {
-    outline: none;
-    border-color: var(--accent);
-    background: #fff;
-    color: var(--ink);
-  }
-  .meal-name.plain {
-    flex: 1;
   }
   .meal-sum {
     margin-left: auto;
@@ -662,26 +700,90 @@
     font-size: 11.5px;
     font-variant-numeric: tabular-nums;
   }
-  .meal-del-form {
-    margin: 0;
-    display: flex;
-  }
-  .meal-del {
+  /* Meal options trigger — opens the rename/delete sheet (deliberate, not on-tap). */
+  .meal-menu-btn {
     border: none;
     background: transparent;
     color: var(--faint);
     cursor: pointer;
-    font-size: 11px;
-    padding: 2px 5px;
-    border-radius: 5px;
-    opacity: 0.45;
+    font-size: 16px;
+    line-height: 1;
+    padding: 4px 6px;
+    margin: -4px -6px -4px 0;
+    border-radius: 6px;
   }
-  .meal-sec:hover .meal-del {
-    opacity: 1;
-  }
-  .meal-del:hover {
-    color: var(--over);
+  .meal-menu-btn:hover {
+    color: var(--ink);
     background: var(--fill);
+  }
+  /* --- meal menu sheet contents --- */
+  .menu-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .menu-item {
+    text-align: left;
+    border: none;
+    background: transparent;
+    border-radius: 9px;
+    padding: 12px 12px;
+    font: inherit;
+    font-size: 14px;
+    color: var(--ink);
+    cursor: pointer;
+  }
+  .menu-item:hover {
+    background: var(--fill);
+  }
+  .menu-item.danger {
+    color: var(--over);
+  }
+  .sheet-input {
+    width: 100%;
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    padding: 10px 12px;
+    font-size: 16px;
+    margin-bottom: 14px;
+  }
+  .confirm-text {
+    margin: 0 0 16px;
+    font-size: 13.5px;
+    color: var(--muted);
+  }
+  .sheet-actions {
+    display: flex;
+    gap: 8px;
+  }
+  .sheet-actions .cta {
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: 9px;
+    padding: 9px 18px;
+    font-weight: 600;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  .sheet-actions .danger-btn {
+    background: var(--over);
+    color: #fff;
+    border: none;
+    border-radius: 9px;
+    padding: 9px 18px;
+    font-weight: 600;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  .sheet-actions .ghost {
+    border: 1px solid var(--line);
+    background: #fff;
+    color: var(--muted);
+    border-radius: 9px;
+    padding: 9px 14px;
+    font-size: 13px;
+    cursor: pointer;
   }
   .new-meal-btn {
     margin-top: 4px;
