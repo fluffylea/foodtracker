@@ -4,6 +4,9 @@
   import AddEntryModal from '$lib/components/AddEntryModal.svelte';
   import GoalTile from '$lib/components/GoalTile.svelte';
   import GoalModal from '$lib/components/GoalModal.svelte';
+  import { createReorder } from '$lib/gestures/reorder.svelte';
+  import { flipDuration } from '$lib/motion';
+  import { flip } from 'svelte/animate';
   import { invalidateAll } from '$app/navigation';
 
   let { data } = $props();
@@ -38,22 +41,53 @@
 
   // --- meal groups: grouping, subtotals, drag-reorder, add ---
   const mealById = $derived(new Map(data.mealGroups.map((m) => [m.id, m])));
-  function entriesFor(mealId: number | null) {
-    return data.entries.filter((e) => e.mealGroupId === mealId);
-  }
+  const entryById = $derived(new Map(data.entries.map((e) => [e.id, e])));
+
   // The default "Log" bucket: entries with no meal, plus any whose meal isn't
   // visible on this day (e.g. its meal was removed) so they're never orphaned.
   const unsortedEntries = $derived(
     data.entries.filter((e) => e.mealGroupId === null || !mealById.has(e.mealGroupId))
   );
-  function subtotal(es: (typeof data.entries)) {
-    return es.reduce((s, e) => s + (e.energy ?? 0), 0);
+  function subtotalIds(ids: number[]) {
+    return ids.reduce((s, id) => s + (entryById.get(id)?.energy ?? 0), 0);
+  }
+  // Resolve id lists into present rows. `animate:flip` needs the animated element
+  // to be the *only* child of its keyed {#each}, so we filter here rather than
+  // guard with {#if} inside the loop.
+  function entriesOf(ids: number[]) {
+    return ids.flatMap((id) => {
+      const e = entryById.get(id);
+      return e ? [e] : [];
+    });
   }
 
+  // `data.entries` already arrives sorted (getDay orders by sortOrder), so a
+  // straight push preserves each meal's sequence.
+  function groupEntryIds(d: typeof data): Map<number, number[]> {
+    const m = new Map<number, number[]>(d.mealGroups.map((mg) => [mg.id, []]));
+    for (const e of d.entries) {
+      if (e.mealGroupId !== null && m.has(e.mealGroupId)) m.get(e.mealGroupId)!.push(e.id);
+    }
+    return m;
+  }
+
+  // These mirror the server data but are locally mutable so a drag can reorder
+  // optimistically. Initialised eagerly (untrack) so they're correct during SSR,
+  // then resynced whenever the server data changes (e.g. after a commit). The
+  // entry map is the model the cross-meal entry drag mutates.
   let mealOrder = $state<number[]>(untrack(() => data.mealGroups.map((m) => m.id)));
+  let mealEntryIds = $state<Map<number, number[]>>(untrack(() => groupEntryIds(data)));
   $effect(() => {
     mealOrder = data.mealGroups.map((m) => m.id);
+    mealEntryIds = groupEntryIds(data);
   });
+  // Present meals in drag order (filtered for the same flip-placement reason).
+  const meals = $derived(
+    mealOrder.flatMap((mid) => {
+      const meal = mealById.get(mid);
+      return meal ? [{ mid, meal }] : [];
+    })
+  );
 
   let addingMeal = $state(false);
   let newMealName = $state('');
@@ -74,81 +108,74 @@
   $effect(() => {
     order = data.goals.map((g) => g.nutrientId);
   });
+  // Present goal tiles in drag order, pre-resolved (flip-placement, as above).
+  const goalTiles = $derived(
+    order.flatMap((nid) => {
+      const g = goalByNutrient.get(nid);
+      const n = catalogById.get(nid);
+      return g && n ? [{ nid, g, n }] : [];
+    })
+  );
 
-  // --- pointer-based reorder (works on touch AND mouse) ---
-  // Started from a grip handle (touch-action: none + pointer capture) so it
-  // never fights scroll, text selection, or stray clicks. Instead of moving the
-  // item live, a drop-indicator line shows where it will land; the reorder is
-  // committed only on release. (Native HTML5 drag-and-drop doesn't fire on
-  // touch devices, which is why the old version was broken.)
-  let dragKind = $state<'goal' | 'meal' | null>(null);
-  let dragId = $state<number | null>(null);
-  // The id the dragged item will be inserted *before*, or 'end'.
-  let dropTarget = $state<number | 'end' | null>(null);
-
-  function onReorderMove(e: PointerEvent) {
-    if (dragKind === null || dragId === null) return;
-    const el = document
-      .elementFromPoint(e.clientX, e.clientY)
-      ?.closest(`[data-${dragKind}-id]`) as HTMLElement | null;
-    if (!el) return;
-    const targetId = Number(el.getAttribute(`data-${dragKind}-id`));
-    if (!Number.isInteger(targetId) || targetId === dragId) return;
-
-    const arr = dragKind === 'goal' ? order : mealOrder;
-    const rect = el.getBoundingClientRect();
-    // meals stack vertically; tiles flow in a grid → use the relevant axis.
-    const before =
-      dragKind === 'meal'
-        ? e.clientY < rect.top + rect.height / 2
-        : e.clientX < rect.left + rect.width / 2;
-    if (before) {
-      dropTarget = targetId;
-    } else {
-      const i = arr.indexOf(targetId);
-      dropTarget = i >= 0 && i + 1 < arr.length ? arr[i + 1] : 'end';
+  // --- drag-reorder (goals grid + meals list + entries within/across meals) ---
+  // The gesture is a long-press to lift (a plain tap still opens the item); the
+  // engine (createReorder) floats a clone under the finger while the real items
+  // reflow live via animate:flip. We just map a move onto our reactive models
+  // and persist the result. Goals/meals are single ordered lists; entries are
+  // grouped by meal and can hop between meals.
+  function moveInList(arr: number[], dragId: number, refId: number | null, before: boolean): number[] {
+    const next = arr.filter((x) => x !== dragId);
+    if (refId === null) {
+      next.push(dragId);
+      return next;
     }
+    const i = next.indexOf(refId);
+    next.splice(i < 0 ? next.length : before ? i : i + 1, 0, dragId);
+    return next;
   }
-  async function onReorderUp() {
-    window.removeEventListener('pointermove', onReorderMove);
-    document.body.classList.remove('reordering');
-    const kind = dragKind;
-    const id = dragId;
-    const target = dropTarget;
-    dragKind = null;
-    dragId = null;
-    dropTarget = null;
-    if (kind === null || id === null || target === null) return;
 
-    const orig = kind === 'goal' ? order : mealOrder;
-    const next = orig.filter((x) => x !== id);
-    const at = target === 'end' ? next.length : next.indexOf(target);
-    next.splice(at < 0 ? next.length : at, 0, id);
-    if (next.join(',') === orig.join(',')) return; // no change
+  function reshuffleEntry(dragId: number, toGroup: number, refId: number | null, before: boolean) {
+    const next = new Map(mealEntryIds);
+    for (const [g, ids] of next) {
+      if (ids.includes(dragId)) next.set(g, ids.filter((x) => x !== dragId));
+    }
+    const target = (next.get(toGroup) ?? []).slice();
+    if (refId === null) target.push(dragId);
+    else {
+      const i = target.indexOf(refId);
+      target.splice(i < 0 ? target.length : before ? i : i + 1, 0, dragId);
+    }
+    next.set(toGroup, target);
+    mealEntryIds = next;
+  }
 
-    if (kind === 'goal') order = next;
-    else mealOrder = next;
+  async function postForm(action: string, field: string, value: unknown) {
     const body = new FormData();
-    body.set('order', JSON.stringify(next));
-    await fetch(kind === 'goal' ? '?/reorderGoals' : '?/reorderMeals', {
-      method: 'POST',
-      body,
-      headers: { 'x-sveltekit-action': 'true' }
-    });
-    await invalidateAll();
+    body.set(field, JSON.stringify(value));
+    await fetch(action, { method: 'POST', body, headers: { 'x-sveltekit-action': 'true' } });
   }
-  function startReorder(kind: 'goal' | 'meal', id: number, e: PointerEvent) {
-    if (!isToday) return;
-    e.preventDefault();
-    e.stopPropagation();
-    (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
-    dragKind = kind;
-    dragId = id;
-    dropTarget = null;
-    document.body.classList.add('reordering');
-    window.addEventListener('pointermove', onReorderMove);
-    window.addEventListener('pointerup', onReorderUp, { once: true });
-  }
+
+  const reorder = createReorder({
+    axisFor: (kind) => (kind === 'goal' ? 'x' : 'y'),
+    reshuffle({ kind, dragId, toGroup, refId, before }) {
+      if (kind === 'goal') order = moveInList(order, dragId, refId, before);
+      else if (kind === 'meal') mealOrder = moveInList(mealOrder, dragId, refId, before);
+      else reshuffleEntry(dragId, Number(toGroup), refId, before);
+    },
+    async commit(kind) {
+      if (kind === 'goal') await postForm('?/reorderGoals', 'order', order);
+      else if (kind === 'meal') await postForm('?/reorderMeals', 'order', mealOrder);
+      else {
+        const items: { id: number; mealGroupId: number }[] = [];
+        for (const mid of mealOrder) {
+          for (const id of mealEntryIds.get(mid) ?? []) items.push({ id, mealGroupId: mid });
+        }
+        await postForm('?/reorderEntries', 'items', items);
+      }
+      await invalidateAll();
+    }
+  });
+  const reorderItem = reorder.reorderItem;
 </script>
 
 <svelte:head><title>Plate · {data.label}</title></svelte:head>
@@ -176,104 +203,114 @@
   {#if data.goals.length === 0}
     <p class="empty">{isToday ? 'No goals yet — add one to start tracking.' : 'No goals for this day.'}</p>
   {:else}
-    <div class="tiles">
-      {#each order as nid (nid)}
-        {@const g = goalByNutrient.get(nid)}
-        {@const n = catalogById.get(nid)}
-        {#if g && n}
-          <div
-            class="tile-wrap"
-            class:dragging={dragKind === 'goal' && dragId === nid}
-            class:drop-before={dropTarget === nid}
-            class:drop-end={dropTarget === 'end' && nid === order[order.length - 1]}
-            data-goal-id={nid}
-          >
-            <GoalTile
-              name={n.name}
-              unit={n.unit}
-              consumed={data.totals[nid] ?? 0}
-              mode={g.mode}
-              targetMin={g.targetMin}
-              targetMax={g.targetMax}
-              onedit={() => isToday && openEditGoal(g)}
-              ongrip={isToday ? (e) => startReorder('goal', nid, e) : undefined}
-            />
-          </div>
-        {/if}
+    <div class="tiles" data-reorder-zone="goal" data-reorder-group="0">
+      {#each goalTiles as t (t.nid)}
+        <div
+          class="tile-wrap"
+          class:reorder-placeholder={reorder.draggingKind === 'goal' && reorder.draggingId === t.nid}
+          data-reorder-kind="goal"
+          data-reorder-group="0"
+          data-reorder-id={t.nid}
+          use:reorderItem={{ kind: 'goal', group: 0, id: t.nid, disabled: !isToday }}
+          animate:flip={{ duration: flipDuration() }}
+        >
+          <GoalTile
+            name={t.n.name}
+            unit={t.n.unit}
+            consumed={data.totals[t.nid] ?? 0}
+            mode={t.g.mode}
+            targetMin={t.g.targetMin}
+            targetMax={t.g.targetMax}
+            onedit={() => isToday && openEditGoal(t.g)}
+          />
+        </div>
       {/each}
     </div>
   {/if}
 
-  {#snippet entryRow(e: (typeof data.entries)[number])}
-    <button class="entry" type="button" onclick={() => openEdit(e)}>
-      <span class="e-nm">{e.foodName}{#if e.brand}<em> · {e.brand}</em>{/if}</span>
-      <span class="e-amt">{e.unitLabel}</span>
-      <span class="e-k">{e.energy === null ? '—' : Math.round(e.energy).toLocaleString()}</span>
-    </button>
+  {#snippet entryContent(e: (typeof data.entries)[number])}
+    <span class="e-nm">{e.foodName}{#if e.brand}<em> · {e.brand}</em>{/if}</span>
+    <span class="e-amt">{e.unitLabel}</span>
+    <span class="e-k">{e.energy === null ? '—' : Math.round(e.energy).toLocaleString()}</span>
   {/snippet}
 
-  {#snippet logBody(entries: typeof data.entries, mealId: number | null)}
-    {#if entries.length > 0}
-      <div class="log">
-        {#each entries as e (e.id)}{@render entryRow(e)}{/each}
+  <!-- Named meals (effective-dated; only today's are editable). Each meal is a
+       drop-zone for entries, so an entry can be dragged in (even when empty). -->
+  {#each meals as { mid, meal } (mid)}
+    {@const ids = mealEntryIds.get(mid) ?? []}
+    <section
+      class="meal-sec"
+      class:reorder-placeholder={reorder.draggingKind === 'meal' && reorder.draggingId === mid}
+      data-reorder-kind="meal"
+      data-reorder-group="0"
+      data-reorder-id={mid}
+      use:reorderItem={{ kind: 'meal', group: 0, id: mid, disabled: !isToday, handle: '.grip' }}
+      animate:flip={{ duration: flipDuration() }}
+    >
+      <div class="sec-h meal-head">
+        {#if isToday}
+          <span class="grip" title="Drag to reorder" aria-label="Drag to reorder meal">⠿</span>
+        {/if}
+        {#if isToday}
+          <form method="POST" action="?/renameMeal" use:enhance class="meal-name-form">
+            <input type="hidden" name="id" value={mid} />
+            <input
+              class="meal-name"
+              name="name"
+              value={meal.name}
+              onchange={(e) => e.currentTarget.form?.requestSubmit()}
+              aria-label="Meal name"
+            />
+          </form>
+        {:else}
+          <span class="meal-name plain">{meal.name}</span>
+        {/if}
+        <span class="meal-sum">{Math.round(subtotalIds(ids)).toLocaleString()} kcal</span>
+        {#if isToday && mealOrder.length > 1}
+          <form method="POST" action="?/removeMeal" use:enhance class="meal-del-form">
+            <input type="hidden" name="id" value={mid} />
+            <button class="meal-del" type="submit" title="Remove meal" aria-label="Remove meal">✕</button>
+          </form>
+        {/if}
       </div>
-    {/if}
-    <button class="add-row" type="button" onclick={() => openAdd(mealId)}>+ Add food</button>
-  {/snippet}
-
-  <!-- Named meals (effective-dated; only today's are editable). -->
-  {#each mealOrder as mid (mid)}
-    {@const meal = mealById.get(mid)}
-    {#if meal}
-      {@const es = entriesFor(mid)}
-      <section
-        class="meal-sec"
-        class:dragging={dragKind === 'meal' && dragId === mid}
-        class:drop-before={dropTarget === mid}
-        class:drop-end={dropTarget === 'end' && mid === mealOrder[mealOrder.length - 1]}
-        data-meal-id={mid}
-      >
-        <div class="sec-h meal-head">
-          {#if isToday}
-            <!-- svelte-ignore a11y_no_static_element_interactions -->
-            <span class="grip" onpointerdown={(e) => startReorder('meal', mid, e)} title="Drag to reorder">⠿</span>
-          {/if}
-          {#if isToday}
-            <form method="POST" action="?/renameMeal" use:enhance class="meal-name-form">
-              <input type="hidden" name="id" value={mid} />
-              <input
-                class="meal-name"
-                name="name"
-                value={meal.name}
-                onchange={(e) => e.currentTarget.form?.requestSubmit()}
-                aria-label="Meal name"
-              />
-            </form>
-          {:else}
-            <span class="meal-name plain">{meal.name}</span>
-          {/if}
-          <span class="meal-sum">{Math.round(subtotal(es)).toLocaleString()} kcal</span>
-          {#if isToday && mealOrder.length > 1}
-            <form method="POST" action="?/removeMeal" use:enhance class="meal-del-form">
-              <input type="hidden" name="id" value={mid} />
-              <button class="meal-del" type="submit" title="Remove meal" aria-label="Remove meal">✕</button>
-            </form>
-          {/if}
-        </div>
-        {@render logBody(es, mid)}
-      </section>
-    {/if}
+      <div class="log-zone" data-reorder-zone="entry" data-reorder-group={mid}>
+        {#if ids.length > 0}
+          <div class="log">
+            {#each entriesOf(ids) as e (e.id)}
+              <button
+                class="entry"
+                type="button"
+                class:reorder-placeholder={reorder.draggingKind === 'entry' && reorder.draggingId === e.id}
+                data-reorder-kind="entry"
+                data-reorder-group={mid}
+                data-reorder-id={e.id}
+                use:reorderItem={{ kind: 'entry', group: mid, id: e.id }}
+                animate:flip={{ duration: flipDuration() }}
+                onclick={() => openEdit(e)}
+              >
+                {@render entryContent(e)}
+              </button>
+            {/each}
+          </div>
+        {/if}
+        <button class="add-row" type="button" onclick={() => openAdd(mid)}>+ Add food</button>
+      </div>
+    </section>
   {/each}
 
   <!-- Safety net: entries whose meal isn't visible on this day (shouldn't
-       normally happen now that every entry has a real meal). -->
+       normally happen now that every entry has a real meal). Not reorderable. -->
   {#if unsortedEntries.length > 0}
     <section class="meal-sec">
       <div class="sec-h meal-head">
         <span class="meal-name plain">Unsorted</span>
-        <span class="meal-sum">{Math.round(subtotal(unsortedEntries)).toLocaleString()} kcal</span>
+        <span class="meal-sum">{Math.round(unsortedEntries.reduce((s, e) => s + (e.energy ?? 0), 0)).toLocaleString()} kcal</span>
       </div>
-      {@render logBody(unsortedEntries, null)}
+      <div class="log">
+        {#each unsortedEntries as e (e.id)}
+          <button class="entry" type="button" onclick={() => openEdit(e)}>{@render entryContent(e)}</button>
+        {/each}
+      </div>
     </section>
   {/if}
 
@@ -347,6 +384,9 @@
     border-bottom: 1px solid var(--line);
     background: #fff;
     flex: none;
+    position: sticky;
+    top: 0;
+    z-index: 10;
   }
   .date {
     display: flex;
@@ -438,26 +478,6 @@
   .tile-wrap {
     display: flex;
     position: relative;
-  }
-  .tile-wrap.dragging {
-    opacity: 0.4;
-  }
-  /* drop-indicator line (grid → vertical line at the tile edge) */
-  .tile-wrap.drop-before::before,
-  .tile-wrap.drop-end::after {
-    content: '';
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    width: 2px;
-    border-radius: 2px;
-    background: var(--accent);
-  }
-  .tile-wrap.drop-before::before {
-    left: -5px;
-  }
-  .tile-wrap.drop-end::after {
-    right: -5px;
   }
   .link-btn {
     border: none;
@@ -552,34 +572,18 @@
   .meal-sec:first-of-type {
     margin-top: 22px;
   }
-  /* drop-indicator line (vertical list → horizontal line at the meal edge) */
-  .meal-sec.drop-before::before,
-  .meal-sec.drop-end::after {
-    content: '';
-    position: absolute;
-    left: 0;
-    right: 0;
-    height: 2px;
-    border-radius: 2px;
-    background: var(--accent);
-  }
-  .meal-sec.drop-before::before {
-    top: -9px;
-  }
-  .meal-sec.drop-end::after {
-    bottom: -9px;
-  }
   .meal-head {
     align-items: center;
     gap: 6px;
   }
+  /* Meal drag handle — sized for a thumb (long-press to lift, drag, drop). */
   .grip {
     color: var(--faint);
     cursor: grab;
-    font-size: 13px;
+    font-size: 15px;
     line-height: 1;
-    padding: 4px 2px;
-    margin: -4px 0;
+    padding: 8px 7px;
+    margin: -8px -3px -8px -7px;
     opacity: 0.55;
     touch-action: none;
   }
@@ -587,8 +591,15 @@
     cursor: grabbing;
     opacity: 1;
   }
-  .meal-sec.dragging {
-    opacity: 0.5;
+  /* Drop-zone wrapper (entries + add-row) — purely structural, the meal's whole
+     body is a target so an entry can be dragged into an empty meal. */
+  .log-zone {
+    display: block;
+  }
+  /* The entry is now a drag source: hint the lift on press without stealing the
+     vertical scroll that a quick flick should still do. */
+  .entry {
+    touch-action: pan-y;
   }
   .meal-name-form {
     margin: 0;

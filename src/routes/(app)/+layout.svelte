@@ -1,8 +1,19 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import { page } from '$app/stores';
   import Icon from '$lib/components/Icon.svelte';
 
   let { children, data } = $props();
+
+  // The app shell owns a single scroll container (.main). Lock the document
+  // itself so it can't scroll or rubber-band underneath it — otherwise the
+  // outer document and inner .main fight (sticky header drifts, iOS bounce).
+  // Scoped to the shell (class on <html>) so the login page still scrolls.
+  onMount(() => {
+    const html = document.documentElement;
+    html.classList.add('app-locked');
+    return () => html.classList.remove('app-locked');
+  });
 
   // Content tabs only — account + settings live in the bottom chip.
   const tabs = [
@@ -191,6 +202,10 @@
     display: flex;
     flex-direction: column;
     overflow: auto;
+    /* The sole scroller. `none` (not `contain`) so it neither chains to the
+       locked document nor shows its own rubber-band at the top/bottom — that
+       local bounce was dragging the sticky header down on overscroll. */
+    overscroll-behavior: none;
   }
 
   /* Mobile bottom tab bar (hidden on desktop). */

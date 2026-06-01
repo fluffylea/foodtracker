@@ -1,6 +1,7 @@
 <script lang="ts">
   import { untrack } from 'svelte';
   import { enhance } from '$app/forms';
+  import { modal } from '$lib/actions/modal';
   import type { Nutrient } from '$lib/server/db/schema';
 
   type Editing = { nutrientId: number; min: number | null; max: number | null };
@@ -56,7 +57,7 @@
 
 <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
 <div class="backdrop" onclick={onclose}>
-  <div class="modal" onclick={(e) => e.stopPropagation()}>
+  <div class="modal" use:modal={{ onclose }} onclick={(e) => e.stopPropagation()}>
     <div class="mhead">
       <b>{editing ? 'Edit goal' : 'Add goal'}</b>
       <button class="x" onclick={onclose} aria-label="Close">✕</button>

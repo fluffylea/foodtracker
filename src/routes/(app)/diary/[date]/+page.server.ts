@@ -1,6 +1,6 @@
 import { error, fail, redirect } from '@sveltejs/kit';
 import { addDays, formatDayLabel, isValidDate, relativeLabel, todayInTz } from '$lib/date';
-import { getDay, addEntry, updateEntry, deleteEntry } from '$lib/server/diary';
+import { getDay, addEntry, updateEntry, deleteEntry, reorderEntries } from '$lib/server/diary';
 import { nutrientCatalog, listFoodsForPicker } from '$lib/server/foods';
 import { getVisibleGoals, saveGoalCard, deleteGoalCard, reorderGoals } from '$lib/server/goals';
 import {
@@ -97,6 +97,26 @@ export const actions: Actions = {
     if (!Number.isInteger(id)) return fail(400, { error: 'Invalid entry.' });
     deleteEntry(locals.user!.id, id);
     return { deleted: true };
+  },
+
+  reorderEntries: async ({ request, locals }) => {
+    const raw = (await request.formData()).get('items');
+    let items: { id: number; mealGroupId: number | null }[] = [];
+    try {
+      items = (JSON.parse(String(raw)) as unknown[])
+        .map((it) => {
+          const o = it as { id: unknown; mealGroupId: unknown };
+          return {
+            id: Number(o.id),
+            mealGroupId: o.mealGroupId === null ? null : Number(o.mealGroupId)
+          };
+        })
+        .filter((it) => Number.isInteger(it.id));
+    } catch {
+      return fail(400, { error: 'Bad order.' });
+    }
+    reorderEntries(locals.user!.id, items);
+    return { entriesReordered: true };
   },
 
   // --- Goals (always effective today; past days keep their goals) ---

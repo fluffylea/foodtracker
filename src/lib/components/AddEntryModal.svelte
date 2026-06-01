@@ -1,6 +1,7 @@
 <script lang="ts">
   import { untrack } from 'svelte';
   import { enhance } from '$app/forms';
+  import { modal } from '$lib/actions/modal';
   import type { PickerFood } from '$lib/server/foods';
   import type { Nutrient, MealGroup } from '$lib/server/db/schema';
 
@@ -187,7 +188,7 @@
 
 <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
 <div class="backdrop" onclick={onclose}>
-  <div class="modal" onclick={(e) => e.stopPropagation()}>
+  <div class="modal" use:modal={{ onclose }} onclick={(e) => e.stopPropagation()}>
     <div class="mhead">
       <b>{editing ? 'Edit entry' : 'Add food'}</b>
       <button class="x" onclick={onclose} aria-label="Close">✕</button>

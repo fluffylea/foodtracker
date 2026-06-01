@@ -1,5 +1,6 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
+  import { modal } from '$lib/actions/modal';
   import FoodEditor from '$lib/components/FoodEditor.svelte';
 
   let { data, form } = $props();
@@ -61,7 +62,7 @@
 {#if showEditor}
   <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
   <div class="backdrop" onclick={close}>
-    <div class="modal" onclick={(e) => e.stopPropagation()}>
+    <div class="modal" use:modal={{ onclose: close }} onclick={(e) => e.stopPropagation()}>
       <button class="modal-x" type="button" onclick={close} aria-label="Close">✕</button>
       <div class="modal-scroll">
         {#key editorKey}
@@ -81,6 +82,9 @@
     border-bottom: 1px solid var(--line);
     background: #fff;
     flex: none;
+    position: sticky;
+    top: 0;
+    z-index: 10;
   }
   .date-t h2 {
     font-size: 16px;

@@ -133,6 +133,9 @@
     border-bottom: 1px solid var(--line);
     background: #fff;
     flex: none;
+    position: sticky;
+    top: 0;
+    z-index: 10;
   }
   .navrow {
     display: flex;

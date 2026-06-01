@@ -36,6 +36,8 @@ export interface ReorderItemParams {
   group: number | string;
   id: number;
   disabled?: boolean;
+  /** Restrict the lift to a handle inside the item (e.g. a meal's grip). */
+  handle?: string;
 }
 
 export interface ReorderOptions {
@@ -174,6 +176,7 @@ export function createReorder(opts: ReorderOptions) {
     let p = params;
     const bind = () => ({
       disabled: p.disabled,
+      handle: p.handle,
       onLift: (e: PointerEvent) => lift(node, p.kind, p.group, p.id, e),
       onMove: (e: PointerEvent) => move(e),
       onDrop: () => finish(),

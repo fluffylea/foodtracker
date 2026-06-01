@@ -8,8 +8,7 @@
     mode,
     targetMin,
     targetMax,
-    onedit,
-    ongrip
+    onedit
   }: {
     name: string;
     unit: string;
@@ -18,7 +17,6 @@
     targetMin: number | null;
     targetMax: number | null;
     onedit: () => void;
-    ongrip?: (e: PointerEvent) => void;
   } = $props();
 
   function fmt(v: number): string {
@@ -68,10 +66,6 @@
 
 <button class="tile" type="button" onclick={onedit}>
   <div class="nm">
-    {#if ongrip}
-      <!-- svelte-ignore a11y_no_static_element_interactions, a11y_click_events_have_key_events -->
-      <span class="grip" onpointerdown={ongrip} onclick={(e) => e.stopPropagation()} title="Drag to reorder">⠿</span>
-    {/if}
     <span class="nm-name">{name}</span>
     {#if glyph}<span class="mode m-{mode}">{glyph}</span>{/if}
   </div>
@@ -120,20 +114,6 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-  }
-  .grip {
-    flex: none;
-    margin: -4px -2px -4px -4px;
-    padding: 4px 3px;
-    color: var(--faint);
-    font-size: 11px;
-    line-height: 1;
-    cursor: grab;
-    touch-action: none;
-  }
-  .grip:active {
-    cursor: grabbing;
-    color: var(--muted);
   }
   .mode {
     flex: none;

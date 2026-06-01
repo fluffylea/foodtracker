@@ -1,6 +1,6 @@
 import { and, eq, inArray, asc } from 'drizzle-orm';
 import { db } from './db/index';
-import { foods, foodNutrients, foodUnits, diaryEntries, nutrients } from './db/schema';
+import { foods, foodNutrients, foodUnits, diaryEntries, mealGroups, nutrients } from './db/schema';
 import { mealGroupVisibleOn } from './mealgroups';
 
 export type DiaryEntryView = {
@@ -185,6 +185,42 @@ export function updateEntry(
 
   db.update(diaryEntries).set({ amount, unitId, mealGroupId }).where(eq(diaryEntries.id, id)).run();
   return true;
+}
+
+/**
+ * Persist a drag-reorder of entries. `items` is the full desired arrangement in
+ * visual order (meal by meal); each row's array index becomes its `sortOrder`
+ * and `mealGroupId` records the meal it now sits in (cross-meal moves). Entries
+ * not owned by the user are skipped; an unknown/foreign meal id falls back to
+ * null (the default "Log" bucket) rather than leaking another user's group.
+ */
+export function reorderEntries(
+  userId: number,
+  items: { id: number; mealGroupId: number | null }[]
+): void {
+  if (items.length === 0) return;
+  const ids = items.map((i) => i.id);
+  const owned = new Set(
+    db
+      .select({ id: diaryEntries.id })
+      .from(diaryEntries)
+      .where(and(eq(diaryEntries.userId, userId), inArray(diaryEntries.id, ids)))
+      .all()
+      .map((r) => r.id)
+  );
+  const userMeals = new Set(
+    db
+      .select({ id: mealGroups.id })
+      .from(mealGroups)
+      .where(eq(mealGroups.userId, userId))
+      .all()
+      .map((m) => m.id)
+  );
+  items.forEach((it, i) => {
+    if (!owned.has(it.id)) return;
+    const meal = it.mealGroupId !== null && userMeals.has(it.mealGroupId) ? it.mealGroupId : null;
+    db.update(diaryEntries).set({ sortOrder: i, mealGroupId: meal }).where(eq(diaryEntries.id, it.id)).run();
+  });
 }
 
 /** Delete an entry (must belong to the user). */
