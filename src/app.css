@@ -19,6 +19,16 @@
   --radius: 11px;
   --rail-w: 184px;
 
+  /* Motion. Durations stay short — this is app chrome, not a splash screen.
+     Gesture-driven motion (swipe/drag) uses springs in JS; these tokens cover
+     the discrete transitions (sheets, taps, flip reorders). */
+  --ease-out: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --ease-spring: cubic-bezier(0.34, 1.4, 0.64, 1);
+  --dur-fast: 130ms;
+  --dur-base: 200ms;
+  --dur-slow: 300ms;
+  --flip-dur: 220ms;
+
   /* Centered content column. --gutter is the horizontal padding that keeps
      content within --content-max while letting bars span full width. */
   --content-max: 880px;
@@ -76,13 +86,6 @@ button {
   }
 }
 
-/* While a drag-reorder is in progress, suppress text selection everywhere. */
-body.reordering,
-body.reordering * {
-  user-select: none;
-  -webkit-user-select: none;
-}
-
 /* Generic helpers reused across views. */
 .muted {
   color: var(--muted);
@@ -94,4 +97,99 @@ body.reordering * {
   background: var(--card);
   border: 1px solid var(--line);
   border-radius: var(--radius);
+}
+
+/* --- Touch interaction foundations (Phase 0) --- */
+
+/* On touch, a press-and-hold on app chrome must not select text or pop the iOS
+   callout menu — that ambiguity is what made "drag" feel like "edit". Real text
+   inputs (and anything tagged .selectable) opt back in. */
+@media (pointer: coarse) {
+  button,
+  a,
+  [role='button'] {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+  }
+}
+input,
+textarea,
+select,
+[contenteditable],
+.selectable {
+  -webkit-user-select: text;
+  user-select: text;
+}
+.no-select {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+/* While a drag is active (set by use:longPressDrag): suppress text selection
+   everywhere, and show the grabbing cursor on mouse. The held item's own
+   appearance is driven by component state (.dragging), not a global class. */
+body.dragging-active,
+body.dragging-active * {
+  -webkit-user-select: none;
+  user-select: none;
+}
+body.dragging-active {
+  cursor: grabbing;
+}
+
+/* Keep an open dialog's scrolling from chaining out to the page behind it. */
+.backdrop {
+  overscroll-behavior: contain;
+}
+
+/* --- Reorder drag (drives use:reorderItem + the floating clone) --- */
+
+/* The lifted clone is appended to <body>, so it needs global (not component-
+   scoped) styling. It follows the finger via an inline transform; here we only
+   give it the "picked up" look. Its inner scoped markup keeps its own styles. */
+.reorder-clone {
+  position: fixed;
+  margin: 0 !important;
+  z-index: 1000;
+  pointer-events: none;
+  box-shadow: 0 12px 30px rgba(40, 34, 28, 0.22);
+  border-radius: var(--radius);
+  opacity: 0.96;
+  transform-origin: center;
+  will-change: transform;
+}
+.reorder-clone.settling {
+  transition: transform var(--dur-base) var(--ease-out);
+}
+/* The real item left behind reads as the empty slot the clone will drop into. */
+.reorder-placeholder {
+  opacity: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+  .reorder-clone {
+    box-shadow: 0 4px 10px rgba(40, 34, 28, 0.18);
+  }
+}
+
+/* Single-scroller lock. While the app shell is mounted, the document itself must
+   not scroll or bounce — only .main scrolls. Without this the outer document and
+   the inner .main fight: the sticky header drifts and iOS rubber-bands the page.
+   The (app) layout toggles .app-locked on <html>, so the login page (outside the
+   shell) keeps normal document scrolling. */
+html.app-locked,
+html.app-locked body {
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
 }
