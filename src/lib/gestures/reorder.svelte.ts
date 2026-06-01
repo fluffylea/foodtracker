@@ -75,8 +75,9 @@ export function createReorder(opts: ReorderOptions) {
   let baseTop = 0;
   // The pager renders prev/current/next panes with duplicate data-reorder-ids, so
   // the drop-target lookup must be scoped to the pane the drag began in —
-  // otherwise the clone flies to an off-screen neighbour's identical item.
-  let scopeEl: ParentNode = document;
+  // otherwise the clone flies to an off-screen neighbour's identical item. Null
+  // until a lift (and never touched on the server, where `document` is absent).
+  let scopeEl: ParentNode | null = null;
 
   const axis = (kind: string): 'x' | 'y' => (opts.axisFor ? opts.axisFor(kind) : 'y');
 
@@ -158,7 +159,7 @@ export function createReorder(opts: ReorderOptions) {
     }
     // Fly the clone to the item's final resting slot (it may have changed group).
     // Scoped to the drag's own pane so it doesn't target a neighbour's duplicate.
-    const dest = scopeEl.querySelector(
+    const dest = (scopeEl ?? document).querySelector(
       `[data-reorder-kind="${kind}"][data-reorder-id="${id}"]`
     ) as HTMLElement | null;
     if (clone && dest && !reducedMotion()) {
@@ -176,7 +177,7 @@ export function createReorder(opts: ReorderOptions) {
     clone = null;
     dragId = null;
     dragKind = null;
-    scopeEl = document;
+    scopeEl = null;
   }
 
   function reorderItem(node: HTMLElement, params: ReorderItemParams) {
