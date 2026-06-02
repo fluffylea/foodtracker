@@ -1,7 +1,7 @@
 import { error, fail, redirect } from '@sveltejs/kit';
 import { addDays, formatDayLabel, isValidDate, relativeLabel, todayInTz } from '$lib/date';
 import { getDay, addEntry, updateEntry, deleteEntry, reorderEntries } from '$lib/server/diary';
-import { nutrientCatalog, listFoodsForPicker } from '$lib/server/foods';
+import { nutrientCatalog, listFoodsForPicker, createRecipeFood } from '$lib/server/foods';
 import { getVisibleGoals, saveGoalCard, deleteGoalCard, reorderGoals } from '$lib/server/goals';
 import {
   listMealGroups,
@@ -98,6 +98,29 @@ export const actions: Actions = {
     if (!Number.isInteger(id)) return fail(400, { error: 'Invalid entry.' });
     deleteEntry(locals.user!.id, id);
     return { deleted: true };
+  },
+
+  // Snapshot a meal's foods (on this day) into a reusable local 'recipe' food.
+  saveRecipe: async ({ request, locals, params }) => {
+    const f = await request.formData();
+    const mealId = Number(f.get('mealId'));
+    const name = String(f.get('name') ?? '').trim();
+    if (!Number.isInteger(mealId)) return fail(400, { error: 'Invalid meal.' });
+    if (!name) return fail(400, { error: 'Recipe needs a name.' });
+
+    const day = getDay(locals.user!.id, params.date);
+    const entries = day.entries.filter((e) => e.mealGroupId === mealId);
+    if (entries.length === 0) return fail(400, { error: 'That meal has no foods to save.' });
+
+    const totalGrams = entries.reduce((s, e) => s + e.grams, 0);
+    const totals: Record<number, number> = {};
+    for (const e of entries) {
+      for (const [nid, v] of Object.entries(e.nutrients)) {
+        totals[Number(nid)] = (totals[Number(nid)] ?? 0) + v;
+      }
+    }
+    createRecipeFood(locals.user!.id, name, totalGrams, totals);
+    return { recipeSaved: true };
   },
 
   reorderEntries: async ({ request, locals }) => {

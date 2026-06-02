@@ -384,6 +384,33 @@ export function updateFood(userId: number, id: number, input: FoodInput): boolea
   return true;
 }
 
+/**
+ * Snapshot a meal's nutrient totals (over `totalGrams`) into a local food of
+ * kind 'recipe', with a single 'serving' unit equal to the whole amount — so
+ * logging "1 serving" reproduces the meal. This is a flattened snapshot: it
+ * records the totals, not the source foods, so later edits to the originals
+ * don't change it. Returns the new food id.
+ */
+export function createRecipeFood(
+  userId: number,
+  name: string,
+  totalGrams: number,
+  nutrientTotals: Record<number, number>
+): number {
+  const inserted = db
+    .insert(foods)
+    .values({ ownerUserId: userId, source: 'local', kind: 'recipe', name })
+    .returning({ id: foods.id })
+    .get();
+  const g = totalGrams > 0 ? totalGrams : 1;
+  const values = Object.entries(nutrientTotals)
+    .filter(([, v]) => v != null && !Number.isNaN(v))
+    .map(([nid, v]) => ({ foodId: inserted.id, nutrientId: Number(nid), per100g: (v * 100) / g }));
+  if (values.length > 0) db.insert(foodNutrients).values(values).run();
+  db.insert(foodUnits).values({ foodId: inserted.id, name: 'serving', grams: g, isDefault: true }).run();
+  return inserted.id;
+}
+
 /** Delete a local food owned by the user. Returns false if not found/owned. */
 export function deleteFood(userId: number, id: number): boolean {
   const res = db

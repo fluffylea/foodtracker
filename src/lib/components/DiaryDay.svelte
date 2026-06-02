@@ -120,7 +120,7 @@
   // the accidental-rename/delete-on-tap problem). Name is plain text; structural
   // edits are deliberate, behind a ⋯ menu that goes through the overlay manager.
   let menuMeal = $state<{ id: number; name: string } | null>(null);
-  let menuMode = $state<'menu' | 'rename' | 'confirm'>('menu');
+  let menuMode = $state<'menu' | 'rename' | 'confirm' | 'recipe'>('menu');
   function openMealMenu(id: number, name: string) {
     if (!interactive) return;
     menuMeal = { id, name };
@@ -300,7 +300,7 @@
         {/if}
         <span class="meal-name plain">{meal.name}</span>
         <span class="meal-sum">{Math.round(subtotalIds(ids)).toLocaleString()} kcal</span>
-        {#if isToday}
+        {#if interactive && (ids.length > 0 || editGM)}
           <button
             class="meal-menu-btn"
             type="button"
@@ -415,20 +415,50 @@
 
 {#if interactive && menuMeal}
   {@const m = menuMeal}
+  {@const hasEntries = (mealEntryIds.get(m.id)?.length ?? 0) > 0}
   <Sheet
-    title={menuMode === 'rename' ? 'Rename meal' : menuMode === 'confirm' ? 'Delete meal' : m.name}
+    title={menuMode === 'rename'
+      ? 'Rename meal'
+      : menuMode === 'confirm'
+        ? 'Delete meal'
+        : menuMode === 'recipe'
+          ? 'Save as recipe'
+          : m.name}
     maxWidth={360}
     onclose={closeMealMenu}
   >
     {#if menuMode === 'menu'}
       <div class="menu-list">
-        <button class="menu-item" type="button" onclick={() => (menuMode = 'rename')}>Rename</button>
-        {#if mealOrder.length > 1}
-          <button class="menu-item danger" type="button" onclick={() => (menuMode = 'confirm')}>
-            Delete meal
-          </button>
+        {#if hasEntries}
+          <button class="menu-item" type="button" onclick={() => (menuMode = 'recipe')}>Save as recipe</button>
+        {/if}
+        {#if editGM}
+          <button class="menu-item" type="button" onclick={() => (menuMode = 'rename')}>Rename</button>
+          {#if mealOrder.length > 1}
+            <button class="menu-item danger" type="button" onclick={() => (menuMode = 'confirm')}>
+              Delete meal
+            </button>
+          {/if}
         {/if}
       </div>
+    {:else if menuMode === 'recipe'}
+      <form
+        method="POST"
+        action="?/saveRecipe"
+        use:enhance={() => async ({ result, update }) => {
+          await update({ reset: false });
+          if (result.type === 'success') closeMealMenu();
+        }}
+      >
+        <input type="hidden" name="mealId" value={m.id} />
+        <!-- svelte-ignore a11y_autofocus -->
+        <input class="sheet-input" name="name" value={m.name} aria-label="Recipe name" autofocus />
+        <p class="confirm-text">Saves the foods in “{m.name}” as one reusable food — a serving equals the whole meal.</p>
+        <div class="sheet-actions">
+          <button class="cta" type="submit">Save recipe</button>
+          <button class="ghost" type="button" onclick={() => (menuMode = 'menu')}>Cancel</button>
+        </div>
+      </form>
     {:else if menuMode === 'rename'}
       <form
         method="POST"
