@@ -2,6 +2,7 @@ import { redirect, type Handle } from '@sveltejs/kit';
 import { building } from '$app/environment';
 import { runMigrations } from '$lib/server/db/migrate';
 import { auth } from '$lib/server/auth';
+import { svelteKitHandler } from 'better-auth/svelte-kit';
 
 // Run migrations + seed once at server startup. Idempotent.
 let migrated = false;
@@ -41,26 +42,23 @@ export const handle: Handle = async ({ event, resolve }) => {
     redirect(307, '/');
   }
 
-  // Route Better Auth's own endpoints to its handler — matched on path only.
-  // (Better Auth's svelteKitHandler also checks request origin === baseURL origin,
-  // but behind an HTTPS dev proxy like Tailscale Serve, SvelteKit's dev server
-  // sees `http` while baseURL is `https`, so that origin check would 404 every
-  // auth request. auth.handler still builds correct URLs from the configured
-  // baseURL, so a path match is sufficient and proxy-agnostic.)
-  if (!building && pathname.startsWith('/api/auth')) {
-    return auth.handler(event.request);
-  }
+  return svelteKitHandler({
+    event,
+    auth,
+    building,
+    resolve: async (event) => {
+      const response = await resolve(event);
 
-  const response = await resolve(event);
-
-  // Make the charset explicit on HTML. SvelteKit emits `text/html` without a
-  // charset and relies on the <meta charset> prescan — but once the PWA service
-  // worker serves pages via respondWith, some mobile browsers skip that prescan
-  // and default to Latin-1, garbling every multi-byte glyph. An explicit header
-  // is unambiguous everywhere.
-  const type = response.headers.get('content-type');
-  if (type === 'text/html') {
-    response.headers.set('content-type', 'text/html; charset=utf-8');
-  }
-  return response;
+      // Make the charset explicit on HTML. SvelteKit emits `text/html` without a
+      // charset and relies on the <meta charset> prescan — but once the PWA service
+      // worker serves pages via respondWith, some mobile browsers skip that prescan
+      // and default to Latin-1, garbling every multi-byte glyph. An explicit header
+      // is unambiguous everywhere.
+      const type = response.headers.get('content-type');
+      if (type === 'text/html') {
+        response.headers.set('content-type', 'text/html; charset=utf-8');
+      }
+      return response;
+    }
+  });
 };
