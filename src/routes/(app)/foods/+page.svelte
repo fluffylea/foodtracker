@@ -5,9 +5,9 @@
   import { modal } from '$lib/actions/modal';
   import { coarsePointer } from '$lib/pointer.svelte';
   import { reducedMotion } from '$lib/motion';
-  import FoodEditor from '$lib/components/FoodEditor.svelte';
+  import FoodForm from '$lib/components/FoodForm.svelte';
 
-  let { data, form } = $props();
+  let { data } = $props();
 
   const dur = $derived(reducedMotion() ? 0 : 240);
   const flyY = $derived(reducedMotion() ? 0 : coarsePointer() ? 320 : 12);
@@ -78,7 +78,12 @@
       <button class="modal-x" type="button" onclick={close} aria-label="Close">✕</button>
       <div class="modal-scroll">
         {#key editorKey}
-          <FoodEditor food={data.selected} catalog={data.catalog} error={form?.error} />
+          <FoodForm
+            initialFood={data.selected}
+            catalog={data.catalog}
+            context="manage"
+            onclose={close}
+          />
         {/key}
       </div>
     </div>
