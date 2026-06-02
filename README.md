@@ -1,74 +1,78 @@
 # Plate
 
-A self-hosted calorie & nutrition tracker for 1–12 trusted users.
-See [DESIGN.md](DESIGN.md) for the full design and roadmap.
+A self-hosted calorie & nutrition tracker for a small group of trusted users
+(1–12, shared instance, no open signup). Installable PWA, mobile-first.
 
-> **Status:** milestone 6 — Open Food Facts. Done so far: scaffold + schema (m1),
-> session-cookie auth + admin user management (m2), the local-food layer with a
-> named-units editor (m3), diary logging with unit→grams math and per-day totals (m4),
-> effective-dated goals with per-card editing (m5), Open Food Facts search +
-> import-to-shared-cache + per-user "customize" overrides (m6), and user-defined
-> effective-dated meal groups — the diary log shows entries under lightweight
-> per-meal sections with subtotals; meals are added/removed effective today (past
-> days keep theirs, like goals), with a default "Log" bucket and today-only
-> management (m7), and a Trends view — an overlay line chart of nutrient totals
-> over calendar-snapped periods (week/month/quarter/year) with prev/next
-> navigation, a hover cursor + per-metric tooltip, and toggleable metric chips,
-> each normalized to its own range so different scales overlay (m8). A per-user
-> week-start setting (Sun/Mon) lives in Settings.
+See [DESIGN.md](DESIGN.md) for the architecture.
+
+## Features
+
+- **Diary** — log foods per day with flexible units (grams or named servings,
+  fractional amounts), grouped into user-defined meals with subtotals.
+  Swipe between days; drag to reorder tiles, meals, and entries.
+- **Foods** — a per-user local layer: create custom foods, or override Open
+  Food Facts products (edits stay private to you).
+- **Open Food Facts** — search and barcode scan (device camera); imported
+  products are cached locally so the diary never depends on OFF uptime.
+- **Goals** — per-nutrient daily targets in four modes (max / min / range /
+  display), effective-dated so editing today never rewrites past days.
+- **Trends** — overlay line chart of nutrient totals over week/month/quarter/
+  year, each metric normalized to its own range so different scales compare.
+- **Per-user settings** — timezone (sets the day boundary) and week start.
 
 ## Stack
 
-- **SvelteKit** (adapter-node) — one codebase, single Node process
-- **Drizzle ORM + SQLite** (`better-sqlite3`) — one file, easy backup
+- **SvelteKit** (Svelte 5, adapter-node) — one Node process
+- **Drizzle ORM + SQLite** (`better-sqlite3`, WAL) — one file, easy backup
+- **Better Auth** — SSO-only via Authentik (OIDC); no passwords stored here
 - **Docker** — single image, SQLite on a mounted volume
 
 ## Develop
 
 ```sh
 npm install
-cp .env.example .env      # set BETTER_AUTH_SECRET + OIDC_* (Authentik)
-npm run dev               # migrations + seed run automatically on first request
+cp .env.example .env      # set BETTER_AUTH_SECRET + BETTER_AUTH_URL + OIDC_* (Authentik)
+npm run dev               # migrations + seed run automatically on boot
 ```
 
-Open http://localhost:5173. Migrations also run via `npm run db:migrate`, and new
-schema changes are generated with `npm run db:generate`.
+Open http://localhost:5173.
+
+- `npm run check` — type-check (svelte-check)
+- `npm run db:generate` — generate a migration from schema changes
+- `npm run db:migrate` — apply migrations (also runs at server startup)
+
+Camera barcode scanning needs a secure context, so test it on a device over
+HTTPS (e.g. Tailscale Serve) rather than `http://LAN-ip` — see `.env.example`.
 
 ## Authentication
 
-Auth is **SSO-only** via a self-hosted [Authentik](https://goauthentik.io) (OIDC),
-handled by [Better Auth](https://www.better-auth.com). There is no local
-email/password login. Accounts are **auto-provisioned** on first successful SSO
-login, so *who* can sign in is controlled in Authentik (bind the application to a
-group). Configure `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, and the `OIDC_*` vars,
-and register `<BETTER_AUTH_URL>/api/auth/oauth2/callback/authentik` as the redirect
-URI in Authentik. (Admin/user-management is deferred — every account is a plain
-user for now.)
+Auth is **SSO-only** via a self-hosted [Authentik](https://goauthentik.io)
+(OIDC), handled by [Better Auth](https://www.better-auth.com) — there is no
+local email/password login. Accounts are **auto-provisioned** on first
+successful SSO login, so *who* can sign in is controlled in Authentik (bind the
+application to a group).
 
-## Production
+Set `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, and the `OIDC_*` vars, then register
+`<BETTER_AUTH_URL>/api/auth/oauth2/callback/authentik` as the redirect URI in
+Authentik.
 
-```sh
-docker compose up -d --build
-```
+## Deployment
 
-The app listens on `:3000` and stores its database in the `plate-data` volume
-(`/data/plate.db`). Set `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL` (the public https
-origin), and the `OIDC_*` vars in the environment. Back up by copying `plate.db`
-from the volume.
+TBD
 
-## Project layout
+## Layout
 
 ```
 src/
+  hooks.server.ts     migrate-on-boot, auth guard
+  service-worker.ts   app-shell precache, network-first pages
   lib/
-    server/
-      db/          schema.ts, index.ts (client), migrate.ts, seed.ts
-      auth/        index.ts — Better Auth (Authentik OIDC, SSO-only)
-      food-sources/  (milestone 6: Open Food Facts)
-    components/   shared UI
-    date.ts       calendar-day helpers
+    server/           db (schema/migrate/seed), auth, food-sources,
+                      foods·diary·goals·mealgroups·trends
+    components/        UI (DiaryDay, AddEntryModal, FoodForm, charts, …)
+    actions/ gestures/ drag-reorder, modal, portal
   routes/
-    +layout.svelte       left tab rail
-    diary/[date]/        main view (day nav live)
-    trends/  foods/  settings/
+    (app)/diary/[date]/  main view + form actions
+    (app)/trends/ foods/ settings/
+    login/ logout/  api/foods  api/off/{search,import,override}
 ```

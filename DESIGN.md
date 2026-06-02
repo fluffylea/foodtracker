@@ -1,240 +1,403 @@
-# FoodTracker ("Plate") — Design Draft
+# Plate — Architecture
 
-A self-hosted calorie & nutrition tracking app for 1–12 trusted users.
-Think YAZIO / FoodNoms, but deployable on your own infra.
+A self-hosted calorie & nutrition tracker for a small group of trusted users
+(1–12, shared instance, no open signup). Think YAZIO / FoodNoms, deployable on
+your own infra with `docker compose up`.
 
-> Working name: **Plate** (from the wireframes). Status: **decisions locked (v0.3)** —
-> remaining open items marked ❓. Wireframes live in `FoodTracker Wireframes.html`
-> (+ `wire.jsx`, `screens1.jsx`, `screens2.jsx`).
+This document describes the app **as built**. It is kept in sync with the code;
+where a decision has a rationale that isn't obvious from the source, it's noted
+here.
 
 ---
 
-## 1. Goals & Non-Goals
+## 1. Goals & non-goals
 
 **Goals**
-- Easy self-hosted deploy (`docker compose up`).
-- Small, trusted multi-user (1–12 people, shared instance, no open signup).
-- Pull nutrition data from open databases (Open Food Facts first).
-- Per-user **local food layer**: create custom foods, or override data from open DBs.
-- Track consumption per day with flexible units (grams / named servings).
-- Per-nutrient daily goals with 4 modes, **snapshotted per day** (effective-dated).
-- Browse past & future days.
-- Graphs over time.
+- Easy self-hosted deploy (single Docker image + a SQLite volume).
+- Small, trusted multi-user — accounts come from an external identity provider
+  (Authentik via OIDC), no passwords stored here.
+- Pull nutrition data from Open Food Facts, behind a pluggable `FoodSource`.
+- Per-user **local food layer**: custom foods, or per-user overrides of OFF data.
+- Track consumption per day with flexible units (grams or named servings).
+- Per-nutrient daily goals in four display modes, **effective-dated** so past
+  days keep the goals they had.
+- Browse past & future days; graph nutrients over time.
+- Installable PWA that feels native on a phone (mobile-first, offline app-shell).
 
-**Non-Goals (for now)**
+**Non-goals**
 - Public sign-up / untrusted users at scale.
-- Recipe sharing, social features.
-- Native mobile apps (responsive web first).
+- Recipe sharing or social features (a private recipe snapshot exists; see §7).
+- Native mobile apps — it's a responsive PWA.
+- Body/measurement metrics (weight, body-fat). Trends covers nutrients only.
 
 ---
 
-## 2. Decisions (from kickoff)
+## 2. Stack
 
-| Topic | Decision |
-|-------|----------|
-| Stack | **Full-stack TypeScript: SvelteKit** (adapter-node) |
-| ORM / DB | **Drizzle ORM + SQLite** (`better-sqlite3`), single file |
-| Food source | **Open Food Facts** first, behind a pluggable `FoodSource` interface |
-| Food edits vs history | **Live compute** — entries reference food + amount + unit, recomputed on read. (Snapshotting can be added later if retroactive edits become a problem.) |
-| Meals | **User-defined meal groups** (not hardcoded). Entry has optional `meal_group_id`; none = flat list. |
-| Goals | **Effective-dated versioning** (see §4). |
-| Energy unit | **Per-user setting**, defaults to **kcal** (kJ optional). Display-only conversion; storage stays canonical. |
-| Missing nutrients | Stored as **NULL/empty** on the food (not 0) → shown blank in food detail. In daily **totals**, a missing value contributes **0**. |
-| Count units | No separate concept — handled by **named units** (e.g. `large = 65 g`, `small = 50 g`). Amount can be fractional: `1.5 × large`. |
-| Timezone | **Per-user setting**, defaults to browser/server local. Determines the "day" boundary. |
-| Food privacy | Local foods **fully private per user** for now (no cross-user sharing). |
-| Auth | Admin-provisioned accounts, password + session cookie. No open signup. |
-| Deploy | Single Docker image, SQLite volume mounted for persistence. |
+| Concern | Choice |
+|---|---|
+| Framework | **SvelteKit** (Svelte 5, runes) on `adapter-node` |
+| Language | TypeScript throughout (server + client) |
+| Build/dev | Vite |
+| ORM / DB | **Drizzle ORM** + **SQLite** via `better-sqlite3`, single file, WAL mode |
+| Auth | **Better Auth** — SSO-only against one Authentik (OIDC) provider |
+| Food data | **Open Food Facts**, behind a `FoodSource` interface |
+| Barcode scan | `@zxing/browser` (device camera) |
+| Packaging | Single Docker image; SQLite on a mounted volume |
+| PWA | Hand-written service worker (app-shell precache, network-first pages) |
 
----
-
-## 3. Nutrients & computation
-
-- Global **nutrient catalog** (admin-editable). Seed: energy (kcal), protein, carbs,
-  sugars, fat, saturates, fiber, sodium, salt. Each: `key`, `name`, `unit`.
-- Canonical storage: nutrient amounts **per 100 g** of food.
-- A diary entry of `amount` in `unit`:
-  1. resolve `unit → grams` (`g` = 1; named unit = its gram weight).
-  2. `grams = amount × unit_grams`.
-  3. `nutrient = per100g × grams / 100`.
-- **Missing values**: a food may have NULL for a nutrient (genuinely unknown). The food
-  detail shows it blank; daily totals treat a NULL contribution as 0. (So a tile total
-  is "sum of known values" — we may flag "incomplete" if any contributing food was NULL.)
-- **Energy display**: stored in kcal canonically; kJ is a display conversion (×4.184).
+Energy is stored canonically in **kcal**; kJ is a display-only conversion
+(×4.184). Nutrient amounts on foods are stored **per 100 g**.
 
 ---
 
-## 4. Goals (effective-dated)
+## 3. Authentication
 
-- Per `user_id`, per `nutrient`. A goal row carries `mode` + targets + `effective_from`.
-- `mode`: `maximum` | `minimum` | `range` | `display` (display = tile, no target).
-- For day *D*, the active goal for a nutrient = latest row with `effective_from <= D`.
-- Editing goals "today" inserts **new rows** with `effective_from = today` for changed
-  nutrients → past days keep their old goals. ✅
-- Tiles shown for a day = the set of nutrients that have an active goal row for that day.
+Auth is owned by **Better Auth** and is **SSO-only** — there is no
+email/password login in the app.
+
+- A single `genericOAuth` provider (`providerId: 'authentik'`) is configured
+  from env: `OIDC_DISCOVERY_URL`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`. Who
+  *can* sign in is governed by Authentik's application/group binding, not here.
+- Accounts are **auto-provisioned** on first successful SSO login. Identity is
+  the OIDC `sub` (stored on `accounts`). Better Auth requires a unique email on
+  the user row; Authentik usernames may have no email, so we fall back to a
+  deterministic synthetic address on a dedicated subdomain (never a real
+  mailbox). Real emails are used when the provider supplies one.
+- IDs are **integer auto-increment** (`generateId: 'serial'`) so every
+  `users.id` foreign key (foods, diary, meal groups, goals) is a plain integer.
+  Better Auth types `id` as a string; `hooks.server.ts` and `app.d.ts` coerce it
+  back to `number` for the app's FK queries.
+- App-managed columns live on the user row as Better Auth `additionalFields`
+  (`isAdmin`, `energyUnit`, `timezone`, `weekStart`), all `input: false` — the
+  app writes them directly via Drizzle, clients can't set them through auth.
+- `src/lib/auth-client.ts` is the browser client (used by the login page to
+  kick off the OAuth flow); `src/routes/logout/+server.ts` calls
+  `auth.api.signOut`.
+
+**Route guarding** is in `src/hooks.server.ts`:
+- Runs DB migrations + seed once at startup (idempotent).
+- Resolves the session per request; everything except `/login` and `/api/auth/*`
+  requires a user, else redirects to `/login?redirectTo=…`.
+- Routes Better Auth's own endpoints (`/api/auth/*`) to its handler **by path
+  only** — not origin. Behind an HTTPS dev proxy (Tailscale Serve) SvelteKit
+  sees `http` while `baseURL` is `https`, so Better Auth's origin check would
+  404 every auth request; a path match is proxy-agnostic.
+- Forces `content-type: text/html; charset=utf-8` on HTML responses — once the
+  service worker serves pages via `respondWith`, some mobile browsers skip the
+  `<meta charset>` prescan and default to Latin-1, garbling multi-byte glyphs.
 
 ---
 
-## 5. Database schema (Drizzle / SQLite)
+## 4. Database schema
+
+SQLite via Drizzle (`src/lib/server/db/schema.ts`). Conventions: ids are
+autoincrement integers; a **calendar day** is TEXT `'YYYY-MM-DD'` (resolved in
+the user's timezone); timestamps are unix epoch seconds; nutrient values are
+per 100 g.
 
 ```
-users
-  id, email (unique), name, password_hash, is_admin, created_at
+-- Better Auth tables (canonical shape, integer ids) --
+users          id, name, email (unique), email_verified, image,
+               is_admin, energy_unit('kcal'|'kj'), timezone, week_start(0|1),
+               created_at, updated_at
+sessions       id, token (unique), user_id→users, expires_at, ip, ua, …
+accounts       id, user_id→users, account_id, provider_id, tokens…, password
+verifications  id, identifier, value, expires_at, …
 
-sessions
-  id (token), user_id, expires_at
-
-nutrients                         -- global catalog
-  id, key (unique), name, unit, sort_order
-
-foods
-  id, owner_user_id (NULL = shared external cache),
-  source ('off' | 'local'),
-  origin_ref (NULL | OFF barcode/id),   -- set for imports & overrides
-  name, brand, barcode, created_at, updated_at
-  -- override = source 'local' + origin_ref pointing at an OFF product
-
-food_nutrients
-  food_id, nutrient_id, per_100g          -- PK (food_id, nutrient_id)
-
-food_units                                -- 'g' is implicit, not stored
-  id, food_id, name, grams, is_default      -- count units are just named units
-                                            -- ('large'=65g); amount may be fractional
-
-meal_groups                               -- user-defined
-  id, user_id, name, sort_order
-
-diary_entries
-  id, user_id, date (YYYY-MM-DD), food_id,
-  amount, unit_id (NULL = grams), meal_group_id (NULL),
-  sort_order, created_at
-
-goals
-  id, user_id, nutrient_id, mode,
-  target_min, target_max,                 -- semantics depend on mode
-  effective_from (date), created_at
+-- App tables --
+nutrients          id, key (unique), name, unit, sort_order        -- global catalog
+foods              id, owner_user_id→users (NULL = shared OFF cache),
+                   source('off'|'local'), kind('item'|'recipe'),
+                   origin_ref (OFF barcode for imports/overrides),
+                   name, brand, barcode, created_at, updated_at
+food_nutrients     food_id→foods, nutrient_id→nutrients, per_100g   -- PK(food_id,nutrient_id)
+                                                                    -- per_100g NULL = unknown
+food_units         id, food_id→foods, name, grams, is_default       -- 'g' implicit, not stored
+meal_groups        id, user_id→users, name, sort_order,
+                   effective_from, removed_from                     -- effective-dated existence
+diary_entries      id, user_id→users, date 'YYYY-MM-DD',
+                   food_id→foods (RESTRICT), amount, unit_id→food_units (NULL=g),
+                   meal_group_id→meal_groups, sort_order, created_at
+goals              id, user_id→users, nutrient_id→nutrients,
+                   mode('maximum'|'minimum'|'range'|'display'|'none'),
+                   target_min, target_max, sort_order, effective_from, created_at
 ```
+
+Indexes: `foods(owner)`, `foods(origin_ref)`, `food_units(food)`,
+`meal_groups(user)`, `diary_entries(user,date)`, `goals(user,nutrient,effective_from)`.
+
+Cascades: deleting a user cascades to their foods/diary/meals/goals. A food
+referenced by a diary entry is `RESTRICT` (can't orphan an entry); deleting a
+`food_unit` sets the entry's `unit_id` to NULL (falls back to grams).
+
+Migrations are generated by drizzle-kit into `./drizzle` and applied at startup
+by `runMigrations()` (`src/lib/server/db/migrate.ts`), which then runs `seed()`.
 
 ---
 
-## 6. App structure (SvelteKit)
+## 5. Nutrients & computation
+
+- The **nutrient catalog** is global and seeded (`src/lib/server/db/seed.ts`):
+  energy (kcal), protein, carbohydrates, sugars, fat, saturated fat, fiber,
+  salt. `key` is the stable machine id used to map external sources.
+  (Salt = sodium × 2.5; we track salt per the EU label convention, not both.)
+- A diary entry of `amount` in some unit resolves to grams
+  (`grams = amount × unit_grams`, where the implicit `g` unit = 1), then each
+  nutrient contribution is `per_100g × grams / 100` (`src/lib/server/diary.ts`).
+- **Missing values**: a food may have NULL for a nutrient (genuinely unknown).
+  It renders blank in the food detail; in daily/range **totals** a NULL
+  contributes 0.
+- `getDay(userId, date)` returns every entry with its per-nutrient contribution
+  plus the day's totals, in a fixed number of queries (one for entries+joins,
+  one for the per-100g nutrients of all referenced foods).
+
+---
+
+## 6. Goals (effective-dated)
+
+Per user, per nutrient, a goal row carries `mode` + targets + `effective_from`
+(`src/lib/server/goals.ts`).
+
+- **Modes**: `maximum` (fill→cap, over shown red), `minimum` (greens once the
+  floor is met), `range` (shaded band + markers), `display` (number only, no
+  target). Mode is **derived** from which targets are present
+  (`deriveMode(min, max)`); `none` is a tombstone (see below). `GoalTile.svelte`
+  renders the bar/markers per mode.
+- For a day *D*, the active goal for a nutrient is the latest row with
+  `effective_from <= D`. Editing always writes a row effective **today**, so
+  **past days keep their old goals**.
+- Removing a goal inserts a `none` **tombstone** effective today — it stops the
+  tile from today forward without touching history. Tiles shown for a day = the
+  active non-`none` goals for that day, ordered by `sort_order`.
+- `sort_order` is carried across versions so reordering tiles is independent of
+  the effective-dated value. Retargeting a card (changing its nutrient)
+  tombstones the old nutrient and moves the slot to the new one — done in a
+  single transaction so the two writes land together or not at all.
+
+---
+
+## 7. Foods & the local layer
+
+`src/lib/server/foods.ts`. A food is one of:
+
+- **Shared OFF cache** — `owner_user_id = NULL`, `source = 'off'`, read-only.
+  Created by importing an OFF product; the diary never depends on OFF uptime.
+- **Local custom** — `owner_user_id = user`, `source = 'local'`,
+  `origin_ref = NULL`. A from-scratch food the user created.
+- **Local override** — `owner_user_id = user`, `source = 'local'`,
+  `origin_ref = <barcode>`. A per-user editable clone of an OFF product; edits
+  affect only that user. (The Foods tab tags these "Override" vs "Custom" by
+  whether `origin_ref` is set.)
+
+CRUD: `createFood` / `updateFood` (delete-then-rewrite nutrients + units),
+`deleteFood`, all ownership-checked. `parseFoodInput` validates editor payloads
+for the `/api/foods` endpoint (numbers arrive comma-tolerant from the client).
+Multi-statement writes (create/update, OFF import, override clone, recipe
+snapshot) run inside `db.transaction(...)` for atomicity.
+
+**Pickers**: `listFoodsForPicker` preloads the user's local foods + the shared
+OFF cache with full per-100g nutrients (for the add dialog's live scaling).
+*Perf note:* fine at this scale, but the shared cache grows as OFF foods are
+logged — later, bound it (recent/frequent only, or fetch nutrients on select).
+
+**Recipes** (`kind = 'recipe'`): "Save as recipe" snapshots a meal's foods on a
+day into one local food whose single `serving` unit equals the whole meal. It's
+a **flattened** snapshot — it records the totals, not the source foods, so later
+edits to the originals don't change it (`createRecipeFood`).
+
+---
+
+## 8. Open Food Facts integration
+
+`src/lib/server/food-sources/` — `types.ts` defines the `FoodSource` interface
+(`search`, `getByRef`); `openfoodfacts.ts` implements it.
+
+- **Search** hits the dedicated search service (`search.openfoodfacts.org`); the
+  legacy `cgi/search.pl` is frequently 503. A bare number query is treated as a
+  **barcode** and looked up directly via the product API (`world.openfoodfacts.org`).
+- All requests carry a descriptive `User-Agent` (OFF asks clients to identify
+  themselves) and a 12 s timeout; failures degrade to "no data".
+- OFF `nutriments` are mapped to our catalog `key`s (e.g. `energy-kcal_100g →
+  energy`). Negative/non-finite values are dropped.
+- **Import** (`importOffFood`) caches a product as a shared food, idempotent per
+  barcode. **Override** (`createOverride`) ensures the shared cache then clones
+  it into a local food owned by the user, idempotent per (user, barcode).
+
+API routes: `POST /api/off/search`, `/api/off/import`, `/api/off/override`, and
+`/api/foods` (create/update/delete local foods). All sit behind the auth guard.
+
+---
+
+## 9. Diary & meal groups
+
+**Meal groups** (`src/lib/server/mealgroups.ts`) are user-defined and
+**effective-dated** like goals: a meal is visible on day *D* when
+`effective_from <= D < (removed_from ?? ∞)`. Every user has at least a default
+backdated `Log` meal (`ensureDefaultMeal`). Removing a meal soft-sets
+`removed_from = today` and **deletes that meal's entries dated today-or-later**
+(past days keep the meal and its entries) — done in one transaction. The last
+meal visible today can't be removed.
+
+**Diary entries** (`src/lib/server/diary.ts`): add/update/delete are all
+ownership-checked; a unit must belong to the food, the amount must be > 0, and
+the meal group (if any) must be visible on that day. `updateEntry` can change
+the entry's `food_id` too — "Customise" swaps an OFF product for a fresh local
+copy — so the unit is validated against the new food. Drag-reorder
+(`reorderEntries`) takes the full visual arrangement, writes each row's
+`sort_order` and new `meal_group_id` (cross-meal moves), skips entries the user
+doesn't own, and maps an unknown/foreign meal id to NULL rather than leaking
+another user's group; the whole reorder commits in one transaction.
+
+The page load (`diary/[date]/+page.server.ts`) resolves `today` in the user's
+timezone, redirects `/diary/today`, and returns the day plus the catalog,
+picker foods, visible goals, and meals. Mutations are SvelteKit **form
+actions** on the same route (`addEntry`, `updateEntry`, `deleteEntry`,
+`saveRecipe`, `reorder*`, `saveGoal`, `deleteGoal`, `createMeal`, `renameMeal`,
+`removeMeal`).
+
+---
+
+## 10. Trends
+
+`src/lib/server/trends.ts` + `src/lib/date.ts`.
+
+- `rangeTotals(user, from, to)` returns dense per-day arrays aligned to every
+  day in the window (one query joining entries → food nutrients → optional unit
+  weight), so the chart has a continuous x-axis with gaps as 0.
+- Views: **week / month / quarter / year**. `periodBounds` snaps the range to
+  the period containing a reference date (respecting the user's `week_start`).
+- The **year** view collapses to one point per week via `aggregateWeekly`
+  (averaged over a week's *logged* days, so untracked days don't drag it down) —
+  365 daily points are too noisy.
+- `axisTicks` tunes x-axis labels per view (every day for week; week-starts for
+  month/quarter; alternating month names for year).
+- The UI (`trends/+page.svelte`, `OverlayChart`, `TrendChart`) overlays multiple
+  nutrients on a shared axis, **each normalized to its own range** so
+  correlations are visible. Metric chips toggle which nutrients are shown.
+
+---
+
+## 11. App structure & UI
 
 ```
 src/
+  app.css, app.html, app.d.ts        global styles, shell, Locals types
+  hooks.server.ts                    migrate-on-boot, auth guard, /api/auth routing
+  service-worker.ts                  app-shell precache + network-first pages
   lib/
     server/
-      db/            schema.ts, migrations, client (drizzle + better-sqlite3)
-      auth/          sessions, password hashing
-      food-sources/  index.ts (FoodSource interface), openfoodfacts.ts
-      nutrition.ts   unit→grams, per-entry & per-day aggregation
-    components/      GoalTile, ProgressBar, DiaryEntry, charts, ...
-    stores/          client state (selected day, etc.)
+      auth/        Better Auth instance (Authentik OIDC)
+      db/          schema, drizzle client, migrate, seed
+      food-sources/  FoodSource interface + openfoodfacts
+      foods.ts, diary.ts, goals.ts, mealgroups.ts, trends.ts
+    components/    DiaryDay, AddEntryModal, FoodForm, GoalTile, GoalModal,
+                   OverlayChart, TrendChart, Pager, Sheet, ScanButton,
+                   BarcodeScanner, PageHeader, Icon
+    actions/       longPressDrag, modal, portal   (Svelte use: actions)
+    gestures/      reorder.svelte.ts               (the drag-reorder engine)
+    auth-client.ts, date.ts, number.ts, motion.ts,
+    overlay.svelte.ts, pointer.svelte.ts
   routes/
-    (app)/
-      +layout.svelte         left tab bar, auth guard
-      diary/[date]/          main view
-      graphs/
-      foods/                 manage local foods & overrides
-      settings/              nutrients, goals, meal groups, account
-    api/ or +server.ts       JSON endpoints (or use form actions / load fns)
-    login/
+    (app)/         +layout (rail + bottom bar, auth'd), +page → /diary/today
+      diary/[date]/   the main day view + all its form actions
+      trends/         period chart
+      foods/          manage local foods & overrides
+      settings/       timezone + week-start prefs
+    login/, logout/
+    api/foods, api/off/{search,import,override}    JSON endpoints
 ```
 
-UI tabs (left bar): **Diary · Graphs · Foods · Settings**.
+**Layout** (`(app)/+layout.svelte`): a left rail on desktop (Today · Trends ·
+Foods, with account/settings + logout in the footer); a fixed bottom tab bar on
+mobile (≤768px). The shell owns a single `.main` scroller and locks the document
+so it can't rubber-band underneath.
 
-Diary view: day selector (prev/next/pick) → goal tiles (name, consumed vs goal,
-progress bar, mode-aware color) → entries (grouped by meal group if any, else flat) →
-add-food flow (search OFF + local, pick amount + unit).
+**Mobile-first, gesture-driven** (most of the interesting client code):
+- **Day pager** (`Pager.svelte`) renders prev/current/next panes and animates a
+  swipe between days; only the centre pane is interactive (owns modals, drag,
+  mutating forms). Goals/meals are editable only on **today's live pane**.
+- **Drag-reorder** for goal tiles, meals, and entries (incl. cross-meal moves).
+  `longPressDrag` is the gesture primitive — long-press to lift on touch (a tap
+  still opens; a flick still scrolls), drag-on-move for mouse, with pointer
+  capture, edge auto-scroll, and trailing-click suppression. `reorder.svelte.ts`
+  layers a floating clone + drop-target math on top; the real list reorders live
+  via `animate:flip`.
+- **Overlays**: `modal` (focus trap, Escape-closes-top, restores focus) +
+  `portal` (re-parents to `<body>` so a `position:fixed` overlay escapes the
+  pager's `transform` containing block) + `overlay.svelte.ts` (a stack so only
+  the top overlay reacts to Escape and a drag can't start mid-modal).
+- **Barcode scanning** (`BarcodeScanner` / `ScanButton`) uses the device camera
+  via `@zxing/browser`; requires a secure context (hence the HTTPS dev setup).
+- `pointer.svelte.ts` / `motion.ts` branch behaviour on coarse-pointer and
+  `prefers-reduced-motion`.
+
+**Number input**: amounts/nutrients use `type="text" inputmode="decimal"` and
+parse via `src/lib/number.ts`, accepting both `.` and `,` decimal separators
+(a `type="number"` field rejects `,` on many non-US/UK keypads).
 
 ---
 
-## 7. Open Food Facts integration
+## 12. PWA & offline
 
-- `FoodSource` interface: `search(query)`, `getByRef(ref)`.
-- Search hits OFF API live; on add/import we **cache** the product as a shared food
-  (`owner_user_id = NULL`, `source = 'off'`, `origin_ref = barcode`) so the diary never
-  depends on OFF uptime.
-- "Customize"/override: clone the cached food into a local food owned by the user
-  (`source = 'local'`, `origin_ref` preserved); edits affect only that user.
-- Map OFF `nutriments` → our nutrient catalog by key.
+`service-worker.ts` targets "app-feel", not full offline data sync:
+- Versioned build assets + static files are **precached** (cache-first) so the
+  installed app opens instantly.
+- Pages and same-origin GETs are **network-first** with a cache fallback, so a
+  flaky connection shows the last-seen screen instead of a browser error.
+- POSTs (mutations) and cross-origin requests (Open Food Facts) always hit the
+  network. The cache name carries the build version plus a manual epoch so a
+  fix that changes cached response semantics can force a purge.
 
----
-
-## 8. Build roadmap (milestones)
-
-1. **Scaffold** — SvelteKit + Drizzle + SQLite, Docker, base layout + tab bar.
-2. **Auth** — admin-provisioned users, login, session guard, seed admin via env.
-3. **Nutrients + Foods (local)** — catalog seed, local food CRUD with units.
-4. **Diary core** — entries, unit→grams math, per-day nutrient totals, day navigation.
-5. **Goals** — effective-dated goals, goal tiles with the 4 modes.
-6. **OFF integration** — search, import-with-cache, override flow.
-7. **Meal groups** — user-defined groups, grouped diary UI.
-8. **Graphs** — per-nutrient-over-time endpoint + overlay chart UI (Trends direction A).
-9. **Settings polish + deploy** — compose file, volume, backup notes.
-10. **Recipes** *(later)* — `foods.kind = 'recipe'` + component composer, derived nutrition.
+`static/manifest.webmanifest` + icons make it installable.
 
 ---
 
-## 9. UI directions (from wireframes)
+## 13. Deployment
 
-Brand: **Plate**. Left rail tabs: **Today · Trends · Foods · Settings**. Warm-white cards,
-soft grey strokes, orange accent. Chosen directions:
+Single Docker image (`Dockerfile`, multi-stage: build → prune dev deps → slim
+runtime). SQLite lives on a mounted volume at `/data`. Migrations run
+automatically on boot.
 
-- **Today (daily tracker)** → **Direction A — "Dashboard"**: goal tiles on top (4-up grid),
-  user-defined meals listed below, prev/next day in the header. (`DailyA`)
-- **Add food (desktop)** → **Direction B — "Modal two-pane"**: search/results on the left,
-  amount + unit picker + scaled nutrition + meal selector on the right. (`AddModal`)
-  - Mobile uses the slide-over flow (`MobileAdd`).
-- **Trends (graphs)** → **Direction A — "Overlay"** *(not nailed down)*: metric chips on top,
-  one shared-axis chart overlaying all active metrics, normalized (% of goal / z-score / raw)
-  so correlations are visible. (`GraphsA`) — Direction B (left control panel) still on the table.
-- **Goal tiles**: four modes rendered as max (fill→cap, red over), min (greens up to floor),
-  range (shaded band + marker), display (number + sparkline). (`GoalModes`)
+**Environment** (`.env.example`):
+- `DATABASE_PATH` — SQLite file path (default `./data/plate.db`).
+- `BETTER_AUTH_SECRET` — signs sessions/cookies (`openssl rand -base64 32`).
+- `BETTER_AUTH_URL` — public origin (cookies + OAuth redirects); the https URL
+  behind your reverse proxy in production.
+- `OIDC_DISCOVERY_URL`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET` — Authentik
+  provider. Register `<BETTER_AUTH_URL>/api/auth/oauth2/callback/authentik` as
+  the redirect URI.
+- `PORT` — Node server port (default 3000).
 
-## 10. Resolved & new open questions
+**Dev over HTTPS for device testing**: camera/`getUserMedia` needs a secure
+context, so plain `http://LAN-ip` won't do. Expose the dev server via Tailscale
+Serve and point `BETTER_AUTH_URL` at the tailnet hostname (`vite.config.ts`
+already allows `*.ts.net` hosts).
 
-**Resolved** (see decisions table §2): energy unit (kcal default, setting), missing-data
-semantics (NULL on food, 0 in totals), count units (= named units), timezone (per-user
-setting), cross-user sharing (none for now).
+> **Note:** `docker-compose.yml` still references the pre-SSO env vars
+> (`ORIGIN`, `ADMIN_EMAIL`, `ADMIN_PASSWORD`) and should be updated to the
+> `BETTER_AUTH_*` / `OIDC_*` set above.
 
-**Recipes → deferred, schema reserved.** A recipe is a food built from other foods to save
-commonly-made meals. Decision: **reserve `foods.kind` now, build later** (milestone 9+),
-keep it minimal.
-```
-foods.kind        'item' | 'recipe'        -- default 'item'
-recipe_components  id, recipe_food_id, component_food_id, amount, unit_id   -- added later
-```
-Recipe nutrition = sum of components, recomputed live, with optional per-serving yield.
+---
 
-**Body/measurement metrics → out of scope for now.** Trends tracks **nutrients only**; the
-"Weight" line in the wireframe is dropped. (Revisit if we want weight/body-fat logging later.)
+## 14. Security posture
 
-**Still open ❓**
-- **Graphs direction** — A (chips + overlay) vs B (left control panel). Leaning A; not final.
-- **Trends normalization toggle** — % of goal / z-score / raw — keep all three or simplify?
+- Auth is delegated to **Better Auth + Authentik (OIDC)**: no passwords stored
+  in this app, sessions are httpOnly cookies, SvelteKit provides CSRF for form
+  posts. The trusted-user model (≤12 known accounts, provider-gated) is the
+  intended threat model.
+- Every server query is **ownership-scoped** by `user_id`; shared OFF-cache
+  foods (owner NULL) are loggable by anyone but read-only.
+- **Deferred hardening** (acceptable for the trusted-user model): per-IP login
+  throttling lives at the Authentik layer; "log out everywhere" / token
+  revocation beyond session expiry is not surfaced in-app.
 
-## 12. Responsive / polish backlog (deferred to final polish)
+---
 
-Layout is desktop-first right now and overflows on narrow widths (e.g. the goal
-tile grid runs off-screen). Planned responsive steps, to do during final polish:
-- **Left rail** → collapsible / off-canvas drawer below a breakpoint (hamburger).
-- **Goal tile grid** → step 4 → 3 → 2 → 1 columns as width shrinks.
-- **Add-food modal** two-pane → stacked single column on mobile (the wireframes
-  already sketch the mobile slide-over flow).
-- General: fluid paddings, min-width guards on rows, wrap long labels.
-Tracked here so it isn't forgotten; not blocking feature milestones.
+## 15. Reserved / future
 
-**Perf note:** the add-food picker (`listFoodsForPicker`) preloads every local
-*and shared OFF-cache* food with full per-100g nutrients into each diary page.
-Fine at this scale, but the shared cache grows as OFF foods are logged — later,
-bound it (recent/frequent foods only, or fetch full nutrients on select).
-
-## 11. Security backlog (deferred, hand-rolled auth kept)
-
-Auth uses standard primitives (scrypt, hashed 256-bit session tokens, httpOnly/Lax
-cookies, SvelteKit CSRF) but is hand-rolled, not a library. Decided to keep it for the
-trusted-user model. Deferred hardening to revisit later:
-- **Login rate-limiting / brute-force throttling** (main gap).
-- **Self-service password change + reset.**
-- Tunable scrypt cost; optional "log out everywhere" / 2FA.
-- If OAuth/email flows are ever wanted, reconsider **Better Auth**.
+- **Recipes** beyond the flat snapshot (§7): a composer referencing component
+  foods with live-recomputed nutrition. `foods.kind = 'recipe'` is already in
+  use for snapshots; a `recipe_components` table would be the next step.
+- **Bounding the shared OFF cache** as it grows (§7 perf note).
+- **Body/measurement metrics** remain out of scope.
