@@ -1,10 +1,10 @@
 <script lang="ts">
-  // Full-screen camera barcode scanner. Lazy-loads ZXing (pure-JS, so it works
-  // on iOS Safari where the native BarcodeDetector doesn't exist) only when
-  // opened. Decoding is restricted to retail food formats and gated on two
-  // consecutive identical reads, so a one-frame misread can't fire a false
-  // positive while still feeling instant. Reports the code via onDetect and
-  // tears the camera down on close / detect / unmount.
+  // Camera barcode scanner. Lazy-loads ZXing (pure-JS → works on iOS Safari,
+  // which lacks the native BarcodeDetector) only when opened. Decoding is
+  // restricted to retail food formats and gated on two consecutive identical
+  // reads, so a one-frame misread can't fire a false positive while staying
+  // instant. Full-screen on touch; a centred windowed panel on desktop. Reports
+  // the code via onDetect and tears the camera down on close / detect / unmount.
   import { onMount } from 'svelte';
   import { portal } from '$lib/actions/portal';
 
@@ -12,8 +12,13 @@
 
   let video = $state<HTMLVideoElement>();
   let error = $state<string | null>(null);
+  // Mirror a front/user-facing camera so movement feels natural on desktop. The
+  // decoder reads the raw frame (drawImage from the video's intrinsic pixels),
+  // which a CSS transform doesn't touch — so mirroring the preview is display-only
+  // and never affects what ZXing sees.
+  let mirrored = $state(false);
   let controls: { stop: () => void } | null = null;
-  let done = false; // guard so we resolve exactly once
+  let done = false; // resolve exactly once
 
   function cleanup() {
     try {
@@ -50,7 +55,9 @@
         let last = '';
         let streak = 0;
         controls = await reader.decodeFromConstraints(
-          { video: { facingMode: 'environment' } },
+          // Ask for a higher-res rear stream — small/distant barcodes need the
+          // resolution to resolve the bars.
+          { video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } } },
           video,
           (result) => {
             if (done || !result) return; // per-frame "not found" errors are ignored
@@ -68,7 +75,13 @@
             }
           }
         );
-        if (cancelled) cleanup();
+        if (cancelled) {
+          cleanup();
+          return;
+        }
+        // Mirror unless we got a confirmed rear ('environment') camera.
+        const fm = (video.srcObject as MediaStream | null)?.getVideoTracks()[0]?.getSettings().facingMode;
+        mirrored = fm !== 'environment';
       } catch (e) {
         const name = (e as { name?: string })?.name;
         error =
@@ -90,15 +103,17 @@
 </script>
 
 <div class="scanner" use:portal>
-  <!-- svelte-ignore a11y_media_has_caption -->
-  <video bind:this={video} playsinline muted autoplay></video>
+  <div class="panel">
+    <!-- svelte-ignore a11y_media_has_caption -->
+    <video bind:this={video} class:mirrored playsinline muted autoplay></video>
 
-  <div class="overlay">
-    <div class="reticle"><span class="laser"></span></div>
-    <p class="hint">{error ?? 'Point the camera at a barcode'}</p>
+    <div class="overlay">
+      <div class="reticle"><span class="laser"></span></div>
+      <p class="hint">{error ?? 'Fill the box with the barcode — get close'}</p>
+    </div>
+
+    <button class="close" type="button" onclick={close} aria-label="Close scanner">✕</button>
   </div>
-
-  <button class="close" type="button" onclick={close} aria-label="Close scanner">✕</button>
 </div>
 
 <style>
@@ -107,6 +122,12 @@
     inset: 0;
     z-index: 60;
     background: #000;
+    display: flex;
+  }
+  .panel {
+    position: relative;
+    width: 100%;
+    height: 100%;
     overflow: hidden;
   }
   video {
@@ -116,6 +137,9 @@
     height: 100%;
     object-fit: cover;
   }
+  video.mirrored {
+    transform: scaleX(-1);
+  }
   .overlay {
     position: absolute;
     inset: 0;
@@ -123,13 +147,14 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 18px;
+    gap: 16px;
     pointer-events: none;
   }
+  /* Big target: a small barcode inside a small box doesn't carry enough pixels
+     to decode, so the reticle fills most of the frame to coax the user closer. */
   .reticle {
-    width: min(78vw, 360px);
-    height: 38vw;
-    max-height: 220px;
+    width: 84%;
+    height: 52%;
     border: 2px solid rgba(255, 255, 255, 0.9);
     border-radius: 14px;
     box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.45);
@@ -178,6 +203,22 @@
     display: grid;
     place-items: center;
   }
+
+  /* Desktop: a centred windowed overlay rather than an edge-to-edge takeover. */
+  @media (min-width: 700px) and (pointer: fine) {
+    .scanner {
+      background: rgba(20, 16, 12, 0.55);
+      align-items: center;
+      justify-content: center;
+    }
+    .panel {
+      width: min(560px, 92vw);
+      height: min(440px, 80vh);
+      border-radius: 16px;
+      box-shadow: 0 24px 60px rgba(0, 0, 0, 0.4);
+    }
+  }
+
   @media (prefers-reduced-motion: reduce) {
     .laser {
       animation: none;

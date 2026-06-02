@@ -35,6 +35,14 @@
   function fmtEnergy(v: number | null): string {
     return v === null ? '—' : `${Math.round(v)} kcal`;
   }
+
+  // Create a new food prefilled from a no-match filter (barcode vs name).
+  const isBarcode = (q: string) => /^\d{8}$|^\d{12,13}$/.test(q);
+  function createFromFilter() {
+    const q = filter.trim();
+    const param = q ? `&${isBarcode(q) ? 'barcode' : 'name'}=${encodeURIComponent(q)}` : '';
+    goto(`/foods?new=1${param}`);
+  }
 </script>
 
 <svelte:head><title>Plate · Foods</title></svelte:head>
@@ -54,7 +62,14 @@
   </div>
   {#if shown.length === 0}
     <div class="empty-list">
-      {data.foods.length === 0 ? 'No foods yet — create one →' : 'No matches.'}
+      <p>{data.foods.length === 0 ? 'No foods yet.' : 'No matches.'}</p>
+      <button class="create-row" type="button" onclick={createFromFilter}>
+        + Create {filter.trim() && isBarcode(filter.trim())
+          ? `food with barcode ${filter.trim()}`
+          : filter.trim()
+            ? `“${filter.trim()}”`
+            : 'a new food'}
+      </button>
     </div>
   {:else}
     <div class="flist">
@@ -86,6 +101,7 @@
             initialFood={data.selected}
             catalog={data.catalog}
             context="manage"
+            prefill={data.prefill}
             onclose={close}
           />
         {/key}
@@ -203,10 +219,30 @@
   .empty-list {
     border: 1px dashed var(--line);
     border-radius: 12px;
-    padding: 24px;
+    padding: 20px;
     text-align: center;
     color: var(--faint);
     font-size: 13px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+  }
+  .empty-list p {
+    margin: 0;
+  }
+  .create-row {
+    border: 1px solid var(--accent);
+    border-radius: 9px;
+    padding: 9px 14px;
+    background: var(--accent-soft);
+    color: var(--accent-ink);
+    font-weight: 600;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  .create-row:hover {
+    background: #fbe0c8;
   }
 
   /* Edit modal */

@@ -22,6 +22,8 @@
     mealGroups = [],
     defaultMealGroupId = null,
     entry = null,
+    initialMode,
+    prefill,
     onadd,
     onremove,
     onclose,
@@ -33,6 +35,10 @@
     mealGroups?: MealGroup[];
     defaultMealGroupId?: number | null;
     entry?: { amount: number; unitId: number | null } | null;
+    /** Force the starting mode (e.g. open a brand-new food straight into edit). */
+    initialMode?: 'scale' | 'edit';
+    /** Seed a new food's name/barcode (from the search/scan that had no match). */
+    prefill?: { name?: string; barcode?: string };
     onadd?: (p: { foodId: number; amount: number; unitId: number | null; mealGroupId: number | null }) => void;
     onremove?: () => void;
     onclose?: () => void;
@@ -42,7 +48,9 @@
   const catalogById = $derived(new Map(catalog.map((n) => [n.id, n])));
 
   let food = $state<PickerFood | null>(untrack(() => initialFood));
-  let mode = $state<'scale' | 'edit'>(untrack(() => (context === 'manage' ? 'edit' : 'scale')));
+  let mode = $state<'scale' | 'edit'>(
+    untrack(() => initialMode ?? (context === 'manage' ? 'edit' : 'scale'))
+  );
   let busy = $state(false);
   let err = $state<string | null>(null);
 
@@ -149,9 +157,10 @@
   let eDefault = $state<number | 'base'>('base');
 
   function seedEdit(f: PickerFood | null) {
-    eName = f?.name ?? '';
+    // For a brand-new food, seed name/barcode from the search/scan that whiffed.
+    eName = f?.name ?? prefill?.name ?? '';
     eBrand = f?.brand ?? '';
-    eBarcode = f?.barcode ?? '';
+    eBarcode = f?.barcode ?? prefill?.barcode ?? '';
     eNutrients = Object.fromEntries(
       catalog.map((n) => {
         const v = f?.nutrients[n.id];

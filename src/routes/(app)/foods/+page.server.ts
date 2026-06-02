@@ -23,7 +23,12 @@ export const load: PageServerLoad = ({ locals, url }) => {
   const owned = id && Number.isInteger(id) ? getFood(userId, id) : null;
   const selected = owned ? pickerFoodById(id!) : null;
 
-  return { catalog, foods: list, selected, isNew: url.searchParams.has('new') };
+  // A new food may arrive prefilled from a no-match search (?name= or ?barcode=).
+  const name = url.searchParams.get('name')?.trim();
+  const barcode = url.searchParams.get('barcode')?.trim();
+  const prefill = name ? { name } : barcode ? { barcode } : undefined;
+
+  return { catalog, foods: list, selected, isNew: url.searchParams.has('new'), prefill };
 };
 
 /** Parse the JSON editor payload string from the form, then validate it. */

@@ -41,8 +41,21 @@
   // FoodForm internally swaps to a customised copy (which must keep its edit mode).
   let query = $state('');
   let picked = $state<PickerFood | null>(untrack(() => foods.find((f) => f.id === editing?.foodId) ?? null));
+  // When the search has no match, the user can create a food prefilled from the
+  // query; `creating` holds that prefill and opens FoodForm in edit mode.
+  let creating = $state<{ name?: string; barcode?: string } | null>(null);
   let pickSeq = $state(0);
   const entryScale = untrack(() => (editing ? { amount: editing.amount, unitId: editing.unitId } : null));
+
+  // EAN-8 / UPC-A / EAN-13 shapes → treat the query as a barcode, not a name.
+  const isBarcode = (q: string) => /^\d{8}$|^\d{12,13}$/.test(q);
+  function createFromSearch() {
+    const q = query.trim();
+    if (!q) return;
+    creating = isBarcode(q) ? { barcode: q } : { name: q };
+    picked = null;
+    pickSeq++;
+  }
 
   const shown = $derived(
     foods.filter((f) => {
@@ -58,6 +71,7 @@
 
   function pick(food: PickerFood) {
     picked = food;
+    creating = null;
     pickSeq++;
   }
 
@@ -66,6 +80,11 @@
   let offResults = $state<OffResult[]>([]);
   let offLoading = $state(false);
   let busy = $state(false);
+
+  // Show a "create this" affordance when the query yields nothing anywhere.
+  const noResults = $derived(
+    query.trim().length > 0 && shown.length === 0 && !offLoading && offResults.length === 0
+  );
 
   const localRefs = $derived(new Set(foods.map((f) => f.originRef).filter(Boolean)));
 
@@ -157,7 +176,7 @@
       <button class="x" onclick={onclose} aria-label="Close">✕</button>
     </div>
 
-    <div class="mbody" class:has-selection={picked !== null}>
+    <div class="mbody" class:has-selection={picked !== null || creating !== null}>
       {#if !editing}
         <div class="pane left">
           <div class="search-wrap">
@@ -194,16 +213,22 @@
                 {/each}
               {/if}
             {:else if shown.length === 0}
-              <div class="noresults">Type to search Open Food Facts, or add foods in the Foods tab.</div>
+              <div class="noresults">Type to search Open Food Facts, or scan a barcode.</div>
+            {/if}
+
+            {#if noResults}
+              <button class="create-row" type="button" onclick={createFromSearch}>
+                + Create {isBarcode(query.trim()) ? `food with barcode ${query.trim()}` : `“${query.trim()}”`}
+              </button>
             {/if}
           </div>
         </div>
       {/if}
 
       <div class="pane right">
-        {#if picked}
+        {#if picked || creating}
           {#if !editing}
-            <button class="back" type="button" onclick={() => (picked = null)} aria-label="Back to search">‹ Back</button>
+            <button class="back" type="button" onclick={() => { picked = null; creating = null; }} aria-label="Back to search">‹ Back</button>
           {/if}
           {#key pickSeq}
             <FoodForm
@@ -213,6 +238,8 @@
               {mealGroups}
               {defaultMealGroupId}
               entry={entryScale}
+              initialMode={creating ? 'edit' : undefined}
+              prefill={creating ?? undefined}
               onadd={submitAdd}
               onremove={editing ? removeEntry : undefined}
               onclose={onclose}
@@ -220,7 +247,7 @@
             />
           {/key}
         {:else}
-          <div class="placeholder">Select a food to log.</div>
+          <div class="placeholder">Search for a food, or scan a barcode.</div>
         {/if}
       </div>
     </div>
@@ -323,6 +350,22 @@
     color: var(--faint);
     font-size: 12.5px;
     padding: 12px 4px;
+  }
+  .create-row {
+    margin: 8px 2px 2px;
+    border: 1px dashed var(--line);
+    border-radius: 9px;
+    padding: 11px;
+    text-align: left;
+    background: transparent;
+    color: var(--accent-ink);
+    font-weight: 600;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  .create-row:hover {
+    background: var(--accent-soft);
+    border-color: var(--accent);
   }
   .res {
     text-align: left;
