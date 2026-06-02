@@ -280,7 +280,9 @@
   function cancelEdit() {
     confirmingDelete = false;
     err = null;
-    if (context === 'manage') onclose?.();
+    // No scale view to return to when managing, or when creating a brand-new
+    // food (nothing logged yet) → dismiss instead of stranding on an empty scale.
+    if (context === 'manage' || !food) onclose?.();
     else mode = 'scale';
   }
 </script>

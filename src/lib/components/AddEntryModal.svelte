@@ -159,6 +159,17 @@
     if (editing) postAction('?/deleteEntry', { id: String(editing.id) });
   }
 
+  // FoodForm asks to dismiss its detail view (cancel a new food, or after a
+  // delete): when adding, go back to search; when editing an entry there's no
+  // search to return to, so close the whole sheet.
+  function dismissDetail() {
+    if (editing) onclose();
+    else {
+      picked = null;
+      creating = null;
+    }
+  }
+
   const dur = $derived(reducedMotion() ? 0 : 240);
   const flyY = $derived(reducedMotion() ? 0 : coarsePointer() ? 320 : 12);
 </script>
@@ -242,7 +253,7 @@
               prefill={creating ?? undefined}
               onadd={submitAdd}
               onremove={editing ? removeEntry : undefined}
-              onclose={onclose}
+              onclose={dismissDetail}
               onfoodchange={(f) => (picked = f)}
             />
           {/key}
