@@ -405,7 +405,12 @@ export function createRecipeFood(
   const g = totalGrams > 0 ? totalGrams : 1;
   const values = Object.entries(nutrientTotals)
     .filter(([, v]) => v != null && !Number.isNaN(v))
-    .map(([nid, v]) => ({ foodId: inserted.id, nutrientId: Number(nid), per100g: (v * 100) / g }));
+    .map(([nid, v]) => ({
+      foodId: inserted.id,
+      nutrientId: Number(nid),
+      // Round the derived per-100g to 2 dp — the raw division is noisy.
+      per100g: Math.round(((v * 100) / g) * 100) / 100
+    }));
   if (values.length > 0) db.insert(foodNutrients).values(values).run();
   db.insert(foodUnits).values({ foodId: inserted.id, name: 'serving', grams: g, isDefault: true }).run();
   return inserted.id;
