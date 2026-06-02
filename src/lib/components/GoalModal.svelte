@@ -104,11 +104,11 @@
         <div class="row2">
           <label class="field">
             <span>Minimum <em>optional</em></span>
-            <span class="ib"><input name="min" type="number" step="any" min="0" placeholder="—" bind:value={min} /><em>{unit}</em></span>
+            <span class="ib"><input name="min" type="text" inputmode="decimal" placeholder="—" bind:value={min} /><em>{unit}</em></span>
           </label>
           <label class="field">
             <span>Maximum <em>optional</em></span>
-            <span class="ib"><input name="max" type="number" step="any" min="0" placeholder="—" bind:value={max} /><em>{unit}</em></span>
+            <span class="ib"><input name="max" type="text" inputmode="decimal" placeholder="—" bind:value={max} /><em>{unit}</em></span>
           </label>
         </div>
 

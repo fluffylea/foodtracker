@@ -1,6 +1,7 @@
 <script lang="ts">
   import { untrack } from 'svelte';
   import { enhance } from '$app/forms';
+  import { parseDecimal, parseDecimalOrNull } from '$lib/number';
   import type { FoodDetail } from '$lib/server/foods';
   import type { Nutrient } from '$lib/server/db/schema';
 
@@ -60,11 +61,11 @@
       brand: brand.trim() || null,
       barcode: barcode.trim() || null,
       nutrients: Object.fromEntries(
-        Object.entries(nutrientVals).map(([id, v]) => [id, v === '' ? null : Number(v)])
+        Object.entries(nutrientVals).map(([id, v]) => [id, parseDecimalOrNull(v)])
       ),
       units: units.map((u, i) => ({
         name: u.name.trim(),
-        grams: Number(u.grams),
+        grams: parseDecimal(u.grams),
         isDefault: defaultSel === i
       }))
     })
@@ -109,7 +110,7 @@
       <label class="nfield">
         <span>{n.name}</span>
         <span class="nb">
-          <input type="number" step="any" min="0" inputmode="decimal" bind:value={nutrientVals[n.id]} placeholder="—" />
+          <input type="text" inputmode="decimal" bind:value={nutrientVals[n.id]} placeholder="—" />
           <em>{n.unit}</em>
         </span>
       </label>
@@ -133,7 +134,7 @@
         </label>
         <input class="uname-in" bind:value={unit.name} placeholder="serving" />
         <span class="eq">=</span>
-        <input class="ugrams-in" type="number" step="any" min="0" inputmode="decimal" bind:value={unit.grams} placeholder="grams" />
+        <input class="ugrams-in" type="text" inputmode="decimal" bind:value={unit.grams} placeholder="grams" />
         <span class="g">g</span>
         <button type="button" class="urm" onclick={() => removeUnit(i)} aria-label="Remove unit">✕</button>
       </div>

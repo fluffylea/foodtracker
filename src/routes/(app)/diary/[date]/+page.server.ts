@@ -42,7 +42,8 @@ export const load: PageServerLoad = ({ params, locals }) => {
 
 function parseOptionalNumber(raw: FormDataEntryValue | null): number | null {
   if (raw === null) return null;
-  const s = String(raw).trim();
+  // Accept ',' as the decimal separator (non-US/UK keypads emit it).
+  const s = String(raw).replace(/,/g, '.').trim();
   if (s === '') return null;
   const n = Number(s);
   return Number.isNaN(n) ? null : n;

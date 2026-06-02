@@ -5,6 +5,19 @@
 
   const me = $derived($page.data.user);
   let prefsSaved = $state(false);
+
+  // Full IANA zone list (e.g. "Europe/Berlin", "Europe/Vienna"). Computed the
+  // same way on server and client so SSR matches; falls back to a small set on
+  // the rare runtime without Intl.supportedValuesOf.
+  const zones: string[] = (() => {
+    const sv = (Intl as unknown as { supportedValuesOf?: (k: string) => string[] }).supportedValuesOf;
+    try {
+      if (typeof sv === 'function') return sv('timeZone');
+    } catch {
+      /* fall through */
+    }
+    return ['UTC', 'Europe/London', 'Europe/Berlin', 'Europe/Vienna', 'America/New_York', 'America/Los_Angeles'];
+  })();
 </script>
 
 <svelte:head><title>Plate · Settings</title></svelte:head>
@@ -17,9 +30,8 @@
       <dt>Name</dt><dd>{me.name}</dd>
       <dt>Email</dt><dd>{me.email}</dd>
       <dt>Energy unit</dt><dd>{me.energyUnit}</dd>
-      <dt>Timezone</dt><dd>{me.timezone}</dd>
     </dl>
-    <p class="hint">Energy-unit and timezone editing land in a later milestone.</p>
+    <p class="hint">Energy-unit editing lands in a later milestone.</p>
     <form method="POST" action="/logout" class="logout-row">
       <button class="logout-btn" type="submit">Log out</button>
     </form>
@@ -38,6 +50,14 @@
       }}
     >
       <label class="prow">
+        <span>Timezone</span>
+        <select name="timezone" value={me.timezone}>
+          {#each zones as tz (tz)}
+            <option value={tz}>{tz.replace(/_/g, ' ')}</option>
+          {/each}
+        </select>
+      </label>
+      <label class="prow">
         <span>Week starts on</span>
         <select name="weekStart" value={String(me.weekStart)}>
           <option value="1">Monday</option>
@@ -49,7 +69,7 @@
         <button class="cta" type="submit">Save</button>
       </div>
     </form>
-    <p class="hint">Used for the Trends week view.</p>
+    <p class="hint">Timezone sets when your day rolls over; week start is used for the Trends week view.</p>
   </section>
 </div>
 

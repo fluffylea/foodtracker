@@ -7,6 +7,7 @@
   import { portal } from '$lib/actions/portal';
   import { coarsePointer } from '$lib/pointer.svelte';
   import { reducedMotion } from '$lib/motion';
+  import { parseDecimal } from '$lib/number';
   import type { PickerFood } from '$lib/server/foods';
   import type { Nutrient, MealGroup } from '$lib/server/db/schema';
 
@@ -148,7 +149,7 @@
     return u ? u.grams : 1;
   });
   const grams = $derived.by(() => {
-    const a = Number(amount);
+    const a = parseDecimal(amount);
     if (!(a > 0) || !selected) return 0;
     return a * curUnitGrams;
   });
@@ -179,7 +180,7 @@
     if (!selected || valStr.trim() === '') return;
     const per100 = selected.nutrients[n.id];
     if (!per100 || per100 <= 0) return; // can't reverse a zero/missing value
-    const val = Number(valStr);
+    const val = parseDecimal(valStr);
     if (!(val >= 0)) return;
     const targetGrams = (val * 100) / per100;
     if (curUnitGrams <= 0) return;
@@ -263,6 +264,8 @@
           >
             <input type="hidden" name="foodId" value={selected.id} />
             <input type="hidden" name="mealGroupId" value={mealGroupId} />
+            <!-- Submit the amount normalised to '.' (the visible field accepts ','). -->
+            <input type="hidden" name="amount" value={String(parseDecimal(amount))} />
             {#if editing}<input type="hidden" name="id" value={editing.id} />{/if}
 
             <div class="detail-h">
@@ -280,15 +283,7 @@
             <div class="amt-row">
               <label class="field">
                 <span>Amount</span>
-                <input
-                  name="amount"
-                  type="number"
-                  step="any"
-                  min="0"
-                  inputmode="decimal"
-                  bind:value={amount}
-                  required
-                />
+                <input type="text" inputmode="decimal" bind:value={amount} required />
               </label>
               <label class="field grow">
                 <span>Unit</span>
@@ -322,9 +317,7 @@
                     <span class="nlabel">{n.name}</span>
                     <span class="nb" class:empty={!known}>
                       <input
-                        type="number"
-                        step="any"
-                        min="0"
+                        type="text"
                         inputmode="decimal"
                         disabled={!known}
                         placeholder="—"
