@@ -5,5 +5,17 @@ node_modules/
 *.db
 *.db-shm
 *.db-wal
+*.db-journal
+
+# Secrets / env — ignore every .env variant, but keep the committed template.
 .env
+.env.*
+!.env.example
+
+# Credential material that must never be committed.
+*.pem
+*.key
+*.p12
+*.pfx
+
 .DS_Store
