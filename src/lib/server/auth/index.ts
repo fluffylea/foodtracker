@@ -1,4 +1,9 @@
-import { betterAuth } from 'better-auth';
+// `better-auth/minimal` (not `better-auth`): drops the bundled Kysely default-DB
+// layer, which (a) we don't use — we pass an explicit Drizzle adapter — and (b)
+// breaks the production Rollup build via @better-auth/kysely-adapter's stale
+// `DEFAULT_MIGRATION_TABLE` import against kysely ≥0.29. Built-in migrations are
+// unavailable on this entry, which is fine: our schema is migrated by drizzle-kit.
+import { betterAuth } from 'better-auth/minimal';
 import { genericOAuth } from 'better-auth/plugins';
 import { sveltekitCookies } from 'better-auth/svelte-kit';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
