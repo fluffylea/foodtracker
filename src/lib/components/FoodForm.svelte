@@ -11,6 +11,7 @@
   // offers Customise/Edit/Add; 'manage' (the Foods tab) is edit-only.
   import { untrack } from 'svelte';
   import { parseDecimal, parseDecimalOrNull } from '$lib/number';
+  import ScanButton from '$lib/components/ScanButton.svelte';
   import type { PickerFood } from '$lib/server/foods';
   import type { Nutrient, MealGroup } from '$lib/server/db/schema';
 
@@ -376,7 +377,13 @@
     <label class="field"><span>Name</span><input bind:value={eName} placeholder="e.g. Granola" /></label>
     <label class="field"><span>Brand <em>optional</em></span><input bind:value={eBrand} placeholder="—" /></label>
   </div>
-  <label class="field bc"><span>Barcode <em>optional</em></span><input bind:value={eBarcode} inputmode="numeric" placeholder="—" /></label>
+  <label class="field bc">
+    <span>Barcode <em>optional</em></span>
+    <span class="input-scan">
+      <input bind:value={eBarcode} inputmode="numeric" placeholder="—" />
+      <ScanButton onScan={(c) => (eBarcode = c)} />
+    </span>
+  </label>
 
   <div class="sec">Nutrition · per 100 g <em>blank = unknown</em></div>
   <div class="ngrid">
@@ -519,6 +526,13 @@
     padding: 9px 11px;
     font-size: 16px;
     background: #fff;
+  }
+  .input-scan {
+    position: relative;
+    display: block;
+  }
+  .input-scan input {
+    padding-right: 42px;
   }
   .meal-field {
     margin-top: 14px;

@@ -8,6 +8,7 @@
   import { coarsePointer } from '$lib/pointer.svelte';
   import { reducedMotion } from '$lib/motion';
   import FoodForm from '$lib/components/FoodForm.svelte';
+  import ScanButton from '$lib/components/ScanButton.svelte';
   import type { PickerFood } from '$lib/server/foods';
   import type { Nutrient, MealGroup } from '$lib/server/db/schema';
 
@@ -159,7 +160,10 @@
     <div class="mbody" class:has-selection={picked !== null}>
       {#if !editing}
         <div class="pane left">
-          <input class="search" placeholder="Search foods or Open Food Facts…" bind:value={query} />
+          <div class="search-wrap">
+            <input class="search" placeholder="Search foods or scan a barcode…" bind:value={query} />
+            <ScanButton onScan={(c) => (query = c)} />
+          </div>
           <div class="results">
             {#if shown.length > 0}
               <div class="group-h">My foods</div>
@@ -282,13 +286,17 @@
     min-width: 0;
     overflow: auto;
   }
+  .search-wrap {
+    position: relative;
+    margin-bottom: 10px;
+  }
   .search {
+    width: 100%;
     border: 1px solid var(--line);
     border-radius: 9px;
-    padding: 9px 11px;
+    padding: 9px 42px 9px 11px;
     font-size: 16px;
     background: var(--panel);
-    margin-bottom: 10px;
   }
   .results {
     flex: 1;

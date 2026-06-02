@@ -6,6 +6,7 @@
   import { coarsePointer } from '$lib/pointer.svelte';
   import { reducedMotion } from '$lib/motion';
   import FoodForm from '$lib/components/FoodForm.svelte';
+  import ScanButton from '$lib/components/ScanButton.svelte';
 
   let { data } = $props();
 
@@ -47,7 +48,10 @@
 </header>
 
 <div class="body">
-  <input class="search" placeholder="Filter my foods…" bind:value={filter} />
+  <div class="search-wrap">
+    <input class="search" placeholder="Filter my foods…" bind:value={filter} />
+    <ScanButton onScan={(c) => (filter = c)} />
+  </div>
   {#if shown.length === 0}
     <div class="empty-list">
       {data.foods.length === 0 ? 'No foods yet — create one →' : 'No matches.'}
@@ -126,14 +130,17 @@
   .body {
     padding: 18px var(--gutter);
   }
+  .search-wrap {
+    position: relative;
+    margin-bottom: 12px;
+  }
   .search {
     width: 100%;
     border: 1px solid var(--line);
     border-radius: 9px;
-    padding: 9px 12px;
-    font-size: 13px;
+    padding: 9px 42px 9px 12px;
+    font-size: 16px;
     background: #fff;
-    margin-bottom: 12px;
   }
   .flist {
     border: 1px solid var(--line);
