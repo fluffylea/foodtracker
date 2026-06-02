@@ -10,6 +10,7 @@ import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { getRequestEvent } from '$app/server';
 import { env } from '$env/dynamic/private';
 import { db, schema } from '../db/index';
+import { building } from '$app/environment';
 
 /**
  * Better Auth instance. Auth is **SSO-only** against a single self-hosted
@@ -22,7 +23,8 @@ import { db, schema } from '../db/index';
  */
 export const auth = betterAuth({
   baseURL: env.BETTER_AUTH_URL,
-  secret: env.BETTER_AUTH_SECRET,
+  // This is a workaround. See: https://github.com/better-auth/better-auth/issues/8061
+  secret: building ? 'change-me' : env.BETTER_AUTH_SECRET!,
   database: drizzleAdapter(db, { provider: 'sqlite', usePlural: true, schema }),
   advanced: {
     // Use SQLite's auto-increment integer ids rather than generated strings.
@@ -47,7 +49,7 @@ export const auth = betterAuth({
         {
           providerId: 'authentik',
           discoveryUrl: env.OIDC_DISCOVERY_URL,
-          clientId: env.OIDC_CLIENT_ID,
+          clientId: env.OIDC_CLIENT_ID ?? 'clientid-placeholder',
           clientSecret: env.OIDC_CLIENT_SECRET,
           scopes: ['openid', 'email', 'profile'],
           // Identity is the OIDC `sub` (stored on the account); Better Auth still
