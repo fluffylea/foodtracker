@@ -87,6 +87,9 @@
     display: flex;
     flex-direction: column;
     padding: 16px 12px;
+    /* In landscape the phone is wide enough to show the rail, and the notch sits
+       over its leading edge — keep the brand + tabs clear of it. */
+    padding-left: max(12px, env(safe-area-inset-left));
     gap: 2px;
   }
   .brand {

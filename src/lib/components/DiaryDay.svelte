@@ -630,6 +630,9 @@
     border: none;
     border-bottom: 1px solid var(--line2);
     background: transparent;
+    /* Explicit colour: a bare <button> defaults to the system accent (blue) on
+       iOS Safari, which tinted the food name + kcal. */
+    color: var(--ink);
     cursor: pointer;
     text-align: left;
     /* Drag source: hint the lift on press but let a quick flick still scroll. */

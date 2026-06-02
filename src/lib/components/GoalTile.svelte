@@ -41,7 +41,8 @@
     if (mode === 'maximum' && targetMax !== null) {
       const max = targetMax;
       const scaleMax = (c > max ? c : max) || 1;
-      return { fillPct: Math.min((c / scaleMax) * 100, 100), tone: c > max ? 'over' : 'accent', markers: c > max ? [(max / scaleMax) * 100] : [] };
+      // Under/at the cap = goal satisfied (green); over = exceeded (over).
+      return { fillPct: Math.min((c / scaleMax) * 100, 100), tone: c > max ? 'over' : 'good', markers: c > max ? [(max / scaleMax) * 100] : [] };
     }
     if (mode === 'range' && targetMin !== null && targetMax !== null) {
       const min = targetMin;
