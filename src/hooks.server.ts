@@ -1,6 +1,5 @@
 import { redirect, type Handle } from '@sveltejs/kit';
 import { building } from '$app/environment';
-import { svelteKitHandler } from 'better-auth/svelte-kit';
 import { runMigrations } from '$lib/server/db/migrate';
 import { auth } from '$lib/server/auth';
 
@@ -42,8 +41,17 @@ export const handle: Handle = async ({ event, resolve }) => {
     redirect(307, '/');
   }
 
-  // Mounts Better Auth's handler at /api/auth/*, otherwise resolves normally.
-  const response = await svelteKitHandler({ event, resolve, auth, building });
+  // Route Better Auth's own endpoints to its handler — matched on path only.
+  // (Better Auth's svelteKitHandler also checks request origin === baseURL origin,
+  // but behind an HTTPS dev proxy like Tailscale Serve, SvelteKit's dev server
+  // sees `http` while baseURL is `https`, so that origin check would 404 every
+  // auth request. auth.handler still builds correct URLs from the configured
+  // baseURL, so a path match is sufficient and proxy-agnostic.)
+  if (!building && pathname.startsWith('/api/auth')) {
+    return auth.handler(event.request);
+  }
+
+  const response = await resolve(event);
 
   // Make the charset explicit on HTML. SvelteKit emits `text/html` without a
   // charset and relies on the <meta charset> prescan — but once the PWA service
