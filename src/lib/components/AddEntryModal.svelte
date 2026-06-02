@@ -45,7 +45,9 @@
   // query; `creating` holds that prefill and opens FoodForm in edit mode.
   let creating = $state<{ name?: string; barcode?: string } | null>(null);
   let pickSeq = $state(0);
-  const entryScale = untrack(() => (editing ? { amount: editing.amount, unitId: editing.unitId } : null));
+  const entryScale = untrack(() =>
+    editing ? { amount: editing.amount, unitId: editing.unitId, mealGroupId: editing.mealGroupId } : null
+  );
 
   // EAN-8 / UPC-A / EAN-13 shapes → treat the query as a barcode, not a name.
   const isBarcode = (q: string) => /^\d{8}$|^\d{12,13}$/.test(q);

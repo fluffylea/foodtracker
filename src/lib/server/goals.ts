@@ -127,21 +127,23 @@ export function saveGoalCard(userId: number, today: string, input: GoalCardInput
     sortOrder = maxOrder + 1;
   }
 
-  // Retarget: tombstone the old nutrient.
-  if (input.originalNutrientId !== null && input.originalNutrientId !== input.nutrientId) {
-    upsertToday(userId, today, input.originalNutrientId, {
-      mode: 'none',
-      targetMin: null,
-      targetMax: null,
-      sortOrder: prior?.sortOrder ?? 0
-    });
-  }
+  // Retarget tombstone + the new value must land together (or neither).
+  db.transaction(() => {
+    if (input.originalNutrientId !== null && input.originalNutrientId !== input.nutrientId) {
+      upsertToday(userId, today, input.originalNutrientId, {
+        mode: 'none',
+        targetMin: null,
+        targetMax: null,
+        sortOrder: prior?.sortOrder ?? 0
+      });
+    }
 
-  upsertToday(userId, today, input.nutrientId, {
-    mode,
-    targetMin: input.min,
-    targetMax: input.max,
-    sortOrder
+    upsertToday(userId, today, input.nutrientId, {
+      mode,
+      targetMin: input.min,
+      targetMax: input.max,
+      sortOrder
+    });
   });
 }
 
@@ -164,10 +166,12 @@ export function deleteGoalCard(userId: number, today: string, nutrientId: number
  * is stable across the effective-dated history.
  */
 export function reorderGoals(userId: number, order: number[]): void {
-  order.forEach((nutrientId, i) => {
-    db.update(goals)
-      .set({ sortOrder: i })
-      .where(and(eq(goals.userId, userId), eq(goals.nutrientId, nutrientId)))
-      .run();
+  db.transaction(() => {
+    order.forEach((nutrientId, i) => {
+      db.update(goals)
+        .set({ sortOrder: i })
+        .where(and(eq(goals.userId, userId), eq(goals.nutrientId, nutrientId)))
+        .run();
+    });
   });
 }

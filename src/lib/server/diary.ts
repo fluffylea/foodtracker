@@ -164,26 +164,32 @@ export function addEntry(
   return inserted.id;
 }
 
-/** Update an entry's amount/unit and meal group (must belong to the user). */
+/**
+ * Update an entry's food, amount/unit and meal group (must belong to the user).
+ * `foodId` can change — e.g. "Customise" swaps an Open Food Facts product for a
+ * fresh local copy — so the unit is validated against the *new* food.
+ */
 export function updateEntry(
   userId: number,
   id: number,
+  foodId: number,
   amount: number,
   unitId: number | null,
   mealGroupId: number | null
 ): boolean {
   const entry = db
-    .select({ foodId: diaryEntries.foodId, date: diaryEntries.date })
+    .select({ date: diaryEntries.date })
     .from(diaryEntries)
     .where(and(eq(diaryEntries.id, id), eq(diaryEntries.userId, userId)))
     .get();
   if (!entry) return false;
   if (!(amount > 0)) return false;
-  const { ok } = unitGramsForFood(entry.foodId, unitId);
+  if (!foodLoggable(userId, foodId)) return false;
+  const { ok } = unitGramsForFood(foodId, unitId);
   if (!ok) return false;
   if (!mealGroupValid(userId, mealGroupId, entry.date)) return false;
 
-  db.update(diaryEntries).set({ amount, unitId, mealGroupId }).where(eq(diaryEntries.id, id)).run();
+  db.update(diaryEntries).set({ foodId, amount, unitId, mealGroupId }).where(eq(diaryEntries.id, id)).run();
   return true;
 }
 
@@ -216,10 +222,12 @@ export function reorderEntries(
       .all()
       .map((m) => m.id)
   );
-  items.forEach((it, i) => {
-    if (!owned.has(it.id)) return;
-    const meal = it.mealGroupId !== null && userMeals.has(it.mealGroupId) ? it.mealGroupId : null;
-    db.update(diaryEntries).set({ sortOrder: i, mealGroupId: meal }).where(eq(diaryEntries.id, it.id)).run();
+  db.transaction(() => {
+    items.forEach((it, i) => {
+      if (!owned.has(it.id)) return;
+      const meal = it.mealGroupId !== null && userMeals.has(it.mealGroupId) ? it.mealGroupId : null;
+      db.update(diaryEntries).set({ sortOrder: i, mealGroupId: meal }).where(eq(diaryEntries.id, it.id)).run();
+    });
   });
 }
 

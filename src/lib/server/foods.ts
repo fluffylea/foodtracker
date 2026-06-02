@@ -10,6 +10,9 @@ export type FoodListItem = {
   barcode: string | null;
   source: 'off' | 'local';
   kind: 'item' | 'recipe';
+  // Set when this local food was cloned from an external product (= an override
+  // of an OFF item, vs. a from-scratch custom food). Drives the list tag.
+  originRef: string | null;
   energyPer100g: number | null;
   unitNames: string[];
 };
@@ -37,10 +40,9 @@ export type FoodInput = {
 };
 
 /**
- * Validate a raw editor payload (already JSON-parsed) into a FoodInput. Shared
- * by the Foods-route form and the /api/foods endpoint so both enforce the same
- * rules. Numbers arrive pre-parsed by the client (comma-tolerant), so we only
- * coerce + range-check here.
+ * Validate a raw editor payload (already JSON-parsed) into a FoodInput, for the
+ * /api/foods endpoint (create + update). Numbers arrive pre-parsed by the client
+ * (comma-tolerant), so we only coerce + range-check here.
  */
 export function parseFoodInput(parsed: unknown): { input: FoodInput } | { error: string } {
   if (parsed === null || typeof parsed !== 'object') return { error: 'Missing form data.' };
@@ -125,6 +127,7 @@ export function listFoods(userId: number): FoodListItem[] {
     barcode: r.barcode,
     source: r.source,
     kind: r.kind,
+    originRef: r.originRef,
     energyPer100g: energyByFood.get(r.id) ?? null,
     unitNames: unitsByFood.get(r.id) ?? []
   }));
@@ -248,22 +251,25 @@ export async function importOffFood(barcode: string): Promise<number | null> {
   const p = await openFoodFacts.getByRef(barcode);
   if (!p) return null;
 
-  const inserted = db
-    .insert(foods)
-    .values({ ownerUserId: null, source: 'off', kind: 'item', originRef: p.ref, name: p.name, brand: p.brand, barcode: p.ref })
-    .returning({ id: foods.id })
-    .get();
+  // The fetch is done; persist the cached food + its nutrients/unit atomically.
+  return db.transaction(() => {
+    const inserted = db
+      .insert(foods)
+      .values({ ownerUserId: null, source: 'off', kind: 'item', originRef: p.ref, name: p.name, brand: p.brand, barcode: p.ref })
+      .returning({ id: foods.id })
+      .get();
 
-  const k2id = nutrientKeyToId();
-  const nutrientValues = Object.entries(p.nutrients)
-    .filter(([k]) => k2id.has(k))
-    .map(([k, v]) => ({ foodId: inserted.id, nutrientId: k2id.get(k)!, per100g: v }));
-  if (nutrientValues.length > 0) db.insert(foodNutrients).values(nutrientValues).run();
+    const k2id = nutrientKeyToId();
+    const nutrientValues = Object.entries(p.nutrients)
+      .filter(([k]) => k2id.has(k))
+      .map(([k, v]) => ({ foodId: inserted.id, nutrientId: k2id.get(k)!, per100g: v }));
+    if (nutrientValues.length > 0) db.insert(foodNutrients).values(nutrientValues).run();
 
-  if (p.servingGrams && p.servingGrams > 0) {
-    db.insert(foodUnits).values({ foodId: inserted.id, name: 'serving', grams: p.servingGrams, isDefault: false }).run();
-  }
-  return inserted.id;
+    if (p.servingGrams && p.servingGrams > 0) {
+      db.insert(foodUnits).values({ foodId: inserted.id, name: 'serving', grams: p.servingGrams, isDefault: false }).run();
+    }
+    return inserted.id;
+  });
 }
 
 /**
@@ -285,22 +291,25 @@ export async function createOverride(userId: number, barcode: string): Promise<P
   const shared = db.select().from(foods).where(eq(foods.id, sharedId)).get();
   if (!shared) return null;
 
-  const local = db
-    .insert(foods)
-    .values({ ownerUserId: userId, source: 'local', kind: 'item', originRef: barcode, name: shared.name, brand: shared.brand, barcode: shared.barcode })
-    .returning({ id: foods.id })
-    .get();
+  // Insert the local copy and clone its nutrients + units atomically.
+  const localId = db.transaction(() => {
+    const local = db
+      .insert(foods)
+      .values({ ownerUserId: userId, source: 'local', kind: 'item', originRef: barcode, name: shared.name, brand: shared.brand, barcode: shared.barcode })
+      .returning({ id: foods.id })
+      .get();
 
-  // Clone nutrients + units from the shared cache copy.
-  const srcNutrients = db.select().from(foodNutrients).where(eq(foodNutrients.foodId, sharedId)).all();
-  if (srcNutrients.length > 0) {
-    db.insert(foodNutrients).values(srcNutrients.map((n) => ({ foodId: local.id, nutrientId: n.nutrientId, per100g: n.per100g }))).run();
-  }
-  const srcUnits = db.select().from(foodUnits).where(eq(foodUnits.foodId, sharedId)).all();
-  if (srcUnits.length > 0) {
-    db.insert(foodUnits).values(srcUnits.map((u) => ({ foodId: local.id, name: u.name, grams: u.grams, isDefault: u.isDefault }))).run();
-  }
-  return pickerFoodById(local.id);
+    const srcNutrients = db.select().from(foodNutrients).where(eq(foodNutrients.foodId, sharedId)).all();
+    if (srcNutrients.length > 0) {
+      db.insert(foodNutrients).values(srcNutrients.map((n) => ({ foodId: local.id, nutrientId: n.nutrientId, per100g: n.per100g }))).run();
+    }
+    const srcUnits = db.select().from(foodUnits).where(eq(foodUnits.foodId, sharedId)).all();
+    if (srcUnits.length > 0) {
+      db.insert(foodUnits).values(srcUnits.map((u) => ({ foodId: local.id, name: u.name, grams: u.grams, isDefault: u.isDefault }))).run();
+    }
+    return local.id;
+  });
+  return pickerFoodById(localId);
 }
 
 /** Full detail for one food owned by the user, or null. */
@@ -358,13 +367,15 @@ function writeNutrientsAndUnits(foodId: number, input: FoodInput) {
 
 /** Create a local food owned by the user. Returns the new id. */
 export function createFood(userId: number, input: FoodInput): number {
-  const inserted = db
-    .insert(foods)
-    .values({ ownerUserId: userId, source: 'local', kind: 'item', name: input.name, brand: input.brand, barcode: input.barcode })
-    .returning({ id: foods.id })
-    .get();
-  writeNutrientsAndUnits(inserted.id, input);
-  return inserted.id;
+  return db.transaction(() => {
+    const inserted = db
+      .insert(foods)
+      .values({ ownerUserId: userId, source: 'local', kind: 'item', name: input.name, brand: input.brand, barcode: input.barcode })
+      .returning({ id: foods.id })
+      .get();
+    writeNutrientsAndUnits(inserted.id, input);
+    return inserted.id;
+  });
 }
 
 /** Update a local food owned by the user. Returns false if not found/owned. */
@@ -376,11 +387,13 @@ export function updateFood(userId: number, id: number, input: FoodInput): boolea
     .get();
   if (!owned) return false;
 
-  db.update(foods)
-    .set({ name: input.name, brand: input.brand, barcode: input.barcode, updatedAt: Math.floor(Date.now() / 1000) })
-    .where(eq(foods.id, id))
-    .run();
-  writeNutrientsAndUnits(id, input);
+  db.transaction(() => {
+    db.update(foods)
+      .set({ name: input.name, brand: input.brand, barcode: input.barcode, updatedAt: Math.floor(Date.now() / 1000) })
+      .where(eq(foods.id, id))
+      .run();
+    writeNutrientsAndUnits(id, input);
+  });
   return true;
 }
 
@@ -397,23 +410,25 @@ export function createRecipeFood(
   totalGrams: number,
   nutrientTotals: Record<number, number>
 ): number {
-  const inserted = db
-    .insert(foods)
-    .values({ ownerUserId: userId, source: 'local', kind: 'recipe', name })
-    .returning({ id: foods.id })
-    .get();
   const g = totalGrams > 0 ? totalGrams : 1;
-  const values = Object.entries(nutrientTotals)
-    .filter(([, v]) => v != null && !Number.isNaN(v))
-    .map(([nid, v]) => ({
-      foodId: inserted.id,
-      nutrientId: Number(nid),
-      // Round the derived per-100g to 2 dp — the raw division is noisy.
-      per100g: Math.round(((v * 100) / g) * 100) / 100
-    }));
-  if (values.length > 0) db.insert(foodNutrients).values(values).run();
-  db.insert(foodUnits).values({ foodId: inserted.id, name: 'serving', grams: g, isDefault: true }).run();
-  return inserted.id;
+  return db.transaction(() => {
+    const inserted = db
+      .insert(foods)
+      .values({ ownerUserId: userId, source: 'local', kind: 'recipe', name })
+      .returning({ id: foods.id })
+      .get();
+    const values = Object.entries(nutrientTotals)
+      .filter(([, v]) => v != null && !Number.isNaN(v))
+      .map(([nid, v]) => ({
+        foodId: inserted.id,
+        nutrientId: Number(nid),
+        // Round the derived per-100g to 2 dp — the raw division is noisy.
+        per100g: Math.round(((v * 100) / g) * 100) / 100
+      }));
+    if (values.length > 0) db.insert(foodNutrients).values(values).run();
+    db.insert(foodUnits).values({ foodId: inserted.id, name: 'serving', grams: g, isDefault: true }).run();
+    return inserted.id;
+  });
 }
 
 /** Delete a local food owned by the user. Returns false if not found/owned. */

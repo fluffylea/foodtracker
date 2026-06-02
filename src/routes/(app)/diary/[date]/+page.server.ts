@@ -81,13 +81,15 @@ export const actions: Actions = {
   updateEntry: async ({ request, locals }) => {
     const f = await request.formData();
     const id = Number(f.get('id'));
+    const foodId = Number(f.get('foodId'));
     const amount = Number(f.get('amount'));
     const unitId = parseUnitId(f.get('unitId'));
     const mealGroupId = parseMealGroupId(f.get('mealGroupId'));
     if (!Number.isInteger(id)) return fail(400, { error: 'Invalid entry.' });
+    if (!Number.isInteger(foodId)) return fail(400, { error: 'Pick a food.' });
     if (!(amount > 0)) return fail(400, { error: 'Amount must be greater than 0.' });
 
-    const ok = updateEntry(locals.user!.id, id, amount, unitId, mealGroupId);
+    const ok = updateEntry(locals.user!.id, id, foodId, amount, unitId, mealGroupId);
     if (!ok) return fail(400, { error: 'Could not update that entry.' });
     return { updated: true };
   },

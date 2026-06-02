@@ -76,7 +76,7 @@
       {#each shown as f (f.id)}
         <a class="frow" href="/foods?id={f.id}">
           <span class="fnm">{f.name}{#if f.brand}<em> · {f.brand}</em>{/if}</span>
-          <span class="tag {f.source === 'off' ? 'ov' : 'cu'}">{f.source === 'off' ? 'Override' : 'Custom'}</span>
+          <span class="tag {f.originRef ? 'ov' : 'cu'}">{f.originRef ? 'Override' : 'Custom'}</span>
           <span class="fk">{fmtEnergy(f.energyPer100g)}</span>
           <span class="fu">{['g', ...f.unitNames].join(' · ')}</span>
         </a>

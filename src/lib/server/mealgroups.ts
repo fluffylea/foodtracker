@@ -110,25 +110,29 @@ export function removeMealGroup(userId: number, id: number, today: string): Remo
   if (!mealGroupVisibleOn(userId, id, today)) return 'not-found';
   if (listMealGroups(userId, today).length <= 1) return 'last-meal';
 
-  db.update(mealGroups)
-    .set({ removedFrom: today })
-    .where(and(eq(mealGroups.id, id), eq(mealGroups.userId, userId)))
-    .run();
-  // Today/future entries in this meal are removed with it (past stays).
-  db.delete(diaryEntries)
-    .where(
-      and(eq(diaryEntries.userId, userId), eq(diaryEntries.mealGroupId, id), gte(diaryEntries.date, today))
-    )
-    .run();
+  db.transaction(() => {
+    db.update(mealGroups)
+      .set({ removedFrom: today })
+      .where(and(eq(mealGroups.id, id), eq(mealGroups.userId, userId)))
+      .run();
+    // Today/future entries in this meal are removed with it (past stays).
+    db.delete(diaryEntries)
+      .where(
+        and(eq(diaryEntries.userId, userId), eq(diaryEntries.mealGroupId, id), gte(diaryEntries.date, today))
+      )
+      .run();
+  });
   return 'ok';
 }
 
 /** Persist a new meal order (ids in desired sequence). Order is global. */
 export function reorderMealGroups(userId: number, order: number[]): void {
-  order.forEach((id, i) => {
-    db.update(mealGroups)
-      .set({ sortOrder: i })
-      .where(and(eq(mealGroups.id, id), eq(mealGroups.userId, userId)))
-      .run();
+  db.transaction(() => {
+    order.forEach((id, i) => {
+      db.update(mealGroups)
+        .set({ sortOrder: i })
+        .where(and(eq(mealGroups.id, id), eq(mealGroups.userId, userId)))
+        .run();
+    });
   });
 }

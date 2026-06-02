@@ -34,7 +34,7 @@
     context: 'add' | 'manage';
     mealGroups?: MealGroup[];
     defaultMealGroupId?: number | null;
-    entry?: { amount: number; unitId: number | null } | null;
+    entry?: { amount: number; unitId: number | null; mealGroupId: number | null } | null;
     /** Force the starting mode (e.g. open a brand-new food straight into edit). */
     initialMode?: 'scale' | 'edit';
     /** Seed a new food's name/barcode (from the search/scan that had no match). */
@@ -137,7 +137,10 @@
 
   // ---------- meal (add context) ----------
   function initialMeal(): string {
-    if (entry === null && defaultMealGroupId != null) return String(defaultMealGroupId);
+    // Editing an entry → start on its own meal; adding → the meal it was opened
+    // from (defaultMealGroupId), else the first meal.
+    const target = entry ? entry.mealGroupId : defaultMealGroupId;
+    if (target != null) return String(target);
     const first = mealGroups[0]?.id;
     return first != null ? String(first) : '';
   }
@@ -267,7 +270,8 @@
       const local: PickerFood = await res.json();
       food = local;
       onfoodchange?.(local);
-      seedScale(local);
+      // Keep the gram amount already shown; the new local copy has fresh unit ids,
+      // so the saveUnitId $effect realigns the save-as selection to its default.
       mode = 'edit';
     } finally {
       busy = false;
@@ -629,9 +633,11 @@
     width: 90px;
     border: 1px solid var(--line);
     border-radius: 7px;
-    padding: 7px 9px;
+    padding: 7px 11px;
     font-size: 16px;
-    text-align: right;
+    /* Centred, not right-aligned: digits flush against the right edge made it
+       fiddly to tap the caret past the last one. */
+    text-align: center;
     font-variant-numeric: tabular-nums;
   }
   .ubase {

@@ -477,7 +477,7 @@
         </div>
       </form>
     {:else}
-      <p class="confirm-text">Delete “{m.name}”? Its entries move to Unsorted.</p>
+      <p class="confirm-text">Delete “{m.name}”? Today’s entries in it are removed too. Past days keep the meal and its entries.</p>
       <form
         method="POST"
         action="?/removeMeal"
